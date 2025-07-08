@@ -10,9 +10,9 @@ contract DeployScript is Script {
         vm.startBroadcast();
 
         address backend = vm.envAddress("BACKEND_SIGNER");
-        KycRegistry kyc = new KycRegistry(backend);
+        //KycRegistry kyc = new KycRegistry(backend);
 
-        new HumanOracleWithID(address(kyc));
+        //new HumanOracleWithID(address(kyc));
 
         vm.stopBroadcast();
     }

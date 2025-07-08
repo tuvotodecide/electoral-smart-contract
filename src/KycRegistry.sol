@@ -5,20 +5,24 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
+import {IReputation} from "./interfaces/IReputation.sol";
+
 /**
  * SBT intransferible. El backend firma (wallet, idHash) y el usuario reclama.
  */
 contract KycRegistry is ERC721 {
     mapping(address => bytes32) public idHashOf;
     address public immutable backendSigner;
+    IReputation public immutable reputation;
 
     error AlreadyRegistered();
     error InvalidSignature();
 
-    constructor(address _backendSigner)
+    constructor(address _backendSigner, address _reputation)
         ERC721("VerifiedIdentity", "VID")
     {
         backendSigner = _backendSigner;
+        reputation = IReputation(_reputation);
     }
 
     /**
@@ -36,6 +40,10 @@ contract KycRegistry is ERC721 {
 
         idHashOf[msg.sender] = idHash;
         _safeMint(msg.sender, uint160(msg.sender));
+
+        if(reputation.getReputationOf(msg.sender) == 0) {
+            reputation.updateReputation(msg.sender, true);
+        }
     }
 
     /**
