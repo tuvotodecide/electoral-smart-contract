@@ -78,7 +78,7 @@ contract VotingFlowTest is Test {
             ,
             Reputation reputation,
             KycRegistry userKeys,
-            KycRegistry juryKeys,
+            ,
             VotingRecord recordNft,
             HumanOracleWithID oracle
         ) = initContracts();
@@ -136,6 +136,77 @@ contract VotingFlowTest is Test {
         assertEq(reputation.getReputation(), 2);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 0);
+    }
+    
+    //test verification by Jury
+    function test_juryVerify() public {
+        (
+            uint256 backPk,
+            address user,
+            ,
+            address user3,
+            address jury,
+            string memory userDni,
+            string memory juryDni,
+            Reputation reputation,
+            KycRegistry userKeys,
+            KycRegistry juryKeys,
+            VotingRecord recordNft,
+            HumanOracleWithID oracle
+        ) = initContracts();
+
+        //Claim a user kyc
+        claimKyc(user, backPk, userDni, userKeys, reputation);
+        claimKyc(user3, backPk, userDni, userKeys, reputation);
+        claimKyc(jury, backPk, juryDni, juryKeys, reputation);
+
+        vm.startPrank(user);
+        //user inits a votation updating their first image
+        vm.warp(123);
+        (uint256 questionId, uint256 recordId) = oracle.createQuestion("new record");
+
+        //check question created and user has record nft
+        (uint256 createdAt, HumanOracleWithID.QuestionState resolved, uint256 finalResult) = oracle.viewQuestionInfo(questionId);
+        assertEq(createdAt, 123);
+        assertEq(uint256(resolved), 0);
+        assertEq(oracle.viewQuestionWeighedVotes(questionId, recordId), 1);
+        assertEq(recordNft.ownerOf(recordId), user);
+        vm.stopPrank();
+
+        //user 3 votes no and upload another record
+        vm.startPrank(user3);
+        oracle.vote(questionId, 0, "another record");
+
+        //get user 3 vote
+        uint256 record2Id = oracle.getOptionVoted(questionId);
+        vm.stopPrank();
+
+        //check votes for first and second record
+        assertEq(oracle.viewQuestionWeighedVotes(questionId, recordId), 1);
+        assertEq(oracle.viewQuestionWeighedVotes(questionId, record2Id), 1);
+
+        //warp 4 days and resolve votation
+        vm.warp(4 days);
+        oracle.resolve(questionId);
+
+        //check question status
+        (createdAt, resolved, ) = oracle.viewQuestionInfo(questionId);
+        assertEq(uint256(resolved), 1);
+
+        //jury save final decision
+        vm.prank(jury);
+        oracle.verifyQuestion(questionId, record2Id);
+
+        //check question status
+        (createdAt, resolved, finalResult) = oracle.viewQuestionInfo(questionId);
+        assertEq(uint256(resolved), 2);
+        assertEq(finalResult, record2Id);
+
+        //check users reputation
+        vm.prank(user);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 2);
     }
 
     function signHash(bytes32 userHash, uint256 privateKey) internal pure returns (bytes memory) {
