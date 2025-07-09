@@ -1,0 +1,254 @@
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {IAttestationRecord} from "./interfaces/IAttestationRecord.sol";
+import {IReputation} from "./interfaces/IReputation.sol";
+
+interface IKycRegistry { function balanceOf(address) external view returns (uint256); }
+
+contract AttestationOracle {
+    enum AttestationState {
+        OPEN,
+        VERIFYING,
+        OBSERVED,
+        CLOSED
+    }
+
+    struct AttestationChoice {
+        uint256 record;
+        bool choice;
+    }
+
+    struct Attestation {
+        uint256 createdAt;
+        uint256[] records;
+        mapping(uint256 => int256) weighedAttestations;
+        mapping(uint256 => int256) juryWeighedAttestations;
+        uint256 mostAttested;
+        uint256 mostJuryAttested;
+        uint256 finalResult;
+        address[] usersAttested;
+        address[] juriesAttested;
+        mapping(address => AttestationChoice) attested;
+        AttestationState resolved;
+    }
+
+    IKycRegistry public immutable kyc;
+    IKycRegistry public immutable kycJury;
+    IKycRegistry public immutable kycAuthorized;
+    IAttestationRecord public immutable attestationRecord;
+    IReputation public immutable reputation;
+    
+    uint256 public attestationWindow = 2 hours;
+    uint256 public totalAttestations;
+    Attestation[] private attestations;
+
+    event AttestationCreated(uint256 id, uint256 recordId);
+    event Attested();
+    event Resolved(uint256 id, AttestationState closeState);
+    event InitVerification(uint256 id);
+
+    constructor(address kycRegistry, address kycJuryRegistry, address kycAuthRegistry, address _attestationRecord, address _reputation) {
+        kyc = IKycRegistry(kycRegistry);
+        kycJury = IKycRegistry(kycJuryRegistry);
+        kycAuthorized = IKycRegistry(kycAuthRegistry);
+        attestationRecord = IAttestationRecord(_attestationRecord);
+        reputation = IReputation(_reputation);
+    }
+
+    modifier onlyVerified() {
+        require(kyc.balanceOf(msg.sender) == 1 || kycJury.balanceOf(msg.sender) == 1, "SBT required");
+        _;
+    }
+
+    modifier onlyAuthorized() {
+        require(kycAuthorized.balanceOf(msg.sender) == 1, "SBT required");
+        _;
+    }
+
+    modifier onlyInState(uint256 id, AttestationState state) {
+        require(attestations[id].resolved == state, "Bad attestation state");
+        _;
+    }
+
+    function createAttestation(string memory uri)
+        external
+        onlyVerified
+        returns (uint256 id, uint256 recordId)
+    {
+        recordId = attestationRecord.safeMint(msg.sender, uri);
+
+        Attestation storage q = attestations.push();
+        q.records.push(recordId);
+        q.weighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
+        q.usersAttested.push(msg.sender);
+        q.attested[msg.sender] = AttestationChoice(recordId, true);
+        q.createdAt = block.timestamp;
+        emit AttestationCreated(id, recordId);
+        id = totalAttestations++;
+    }
+
+    function attest(uint256 id, uint256 record, bool choice, string memory uri) external onlyVerified onlyInState(id, AttestationState.OPEN) {
+        Attestation storage q = attestations[id];
+        require(q.attested[msg.sender].record == 0, "already attested");
+
+        bool isJury = kycJury.balanceOf(msg.sender) == 1;
+
+        if(bytes(uri).length > 0) {
+            uint256 recordId = attestationRecord.safeMint(msg.sender, uri);
+            q.records.push(recordId);
+            q.attested[msg.sender] = AttestationChoice(recordId, true);
+            if(!isJury) {
+                q.usersAttested.push(msg.sender);
+                q.weighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
+            }else{
+                q.juriesAttested.push(msg.sender);
+                q.juryWeighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
+            }
+            
+        } else if(q.weighedAttestations[record] > 0 || q.juryWeighedAttestations[record] > 0) {
+            if(!isJury) {
+                q.usersAttested.push(msg.sender);
+                if(choice) {
+                    q.weighedAttestations[record] += int256(reputation.getReputationOf(msg.sender));
+                }else {
+                    q.weighedAttestations[record] -= int256(reputation.getReputationOf(msg.sender));
+                }
+            }else{
+                q.juriesAttested.push(msg.sender);
+                if(choice) {
+                    q.juryWeighedAttestations[record] += int256(reputation.getReputationOf(msg.sender));
+                }else {
+                    q.juryWeighedAttestations[record] -= int256(reputation.getReputationOf(msg.sender));
+                }
+            }
+            q.attested[msg.sender] = AttestationChoice(record, choice);
+            emit Attested();
+        }
+    }
+
+    function resolve(uint256 id) external onlyInState(id, AttestationState.OPEN) {
+        Attestation storage q = attestations[id];
+        require(block.timestamp >= q.createdAt + attestationWindow, "too soon");
+
+        if(q.records.length == 1) {
+            _checkUnanimity(id);
+            return;
+        }
+
+        int256 mostAttestations;
+        for(uint256 i = 0; i < q.records.length; i++) {
+            int256 attestationCount = q.weighedAttestations[q.records[i]];
+            if(attestationCount > mostAttestations) {
+                mostAttestations = attestationCount;
+                q.mostAttested = q.records[i];
+            }
+        }
+
+        int256 mostJuryAttestations;
+        for(uint256 i = 0; i < q.records.length; i++) {
+            int256 attestationCount = q.juryWeighedAttestations[q.records[i]];
+            if(attestationCount > mostJuryAttestations) {
+                mostJuryAttestations = attestationCount;
+                q.mostJuryAttested = q.records[i];
+            }
+        }
+
+        //only users voted
+        if(q.mostAttested > 0 && q.mostJuryAttested == 0) {
+            q.finalResult = q.mostAttested;
+            _setReputation(id);
+            q.resolved = AttestationState.CLOSED;
+            emit Resolved(id, q.resolved);
+        }
+        //only juries voted
+        else if(q.mostAttested == 0 && q.mostJuryAttested > 0) {
+            q.finalResult = q.mostJuryAttested;
+            _setReputation(id);
+            q.resolved = AttestationState.CLOSED;
+            emit Resolved(id, q.resolved);
+        }
+        //most users match most juries
+        else if(q.mostAttested == q.mostJuryAttested) {
+            q.finalResult = q.mostAttested;
+            _setReputation(id);
+            q.resolved = AttestationState.OBSERVED;
+            emit Resolved(id, q.resolved);
+        }
+        //most users doesn't match most juries
+        else {
+            q.resolved = AttestationState.VERIFYING;
+            emit InitVerification(id);
+        }
+    }
+
+    function _checkUnanimity(uint256 id) private {
+        Attestation storage q = attestations[id];
+        q.finalResult = q.records[0];
+        q.resolved = AttestationState.CLOSED;
+        
+        for(uint256 i = 0; i < q.usersAttested.length; i++) {
+            address user = q.usersAttested[i];
+            reputation.updateReputation(user, q.attested[user].choice);
+            if(!q.attested[user].choice && q.resolved == AttestationState.CLOSED) {
+                q.resolved = AttestationState.OBSERVED;
+            }
+        }
+
+        for(uint256 i = 0; i < q.juriesAttested.length; i++) {
+            address jury = q.juriesAttested[i];
+            reputation.updateReputation(jury, q.attested[jury].choice);
+            if(!q.attested[jury].choice && q.resolved == AttestationState.CLOSED) {
+                q.resolved = AttestationState.OBSERVED;
+            }
+        }
+    }
+
+    function verifyAttestation(uint256 id, uint256 choice) external onlyAuthorized onlyInState(id, AttestationState.VERIFYING) {
+        Attestation storage q = attestations[id];
+        if(q.weighedAttestations[choice] > 0 || q.juryWeighedAttestations[choice] > 0) {
+            q.finalResult = choice;
+            _setReputation(id);
+            q.resolved = AttestationState.CLOSED;
+        }
+    }
+
+    function _setReputation(uint256 id) internal {
+        Attestation storage q = attestations[id];
+        require(q.finalResult != 0, "Not final set");
+        for(uint256 i = 0; i < q.usersAttested.length; i++) {
+            address user = q.usersAttested[i];
+            reputation.updateReputation(user, q.attested[user].record == q.finalResult && q.attested[user].choice);
+        }
+
+        for(uint256 i = 0; i < q.juriesAttested.length; i++) {
+            address user = q.juriesAttested[i];
+            reputation.updateReputation(user, q.attested[user].record == q.finalResult && q.attested[user].choice);
+        }
+    }
+
+    function getAttestationInfo(uint256 id) external view returns(
+        uint256 createdAt, AttestationState resolved, uint256 finalResult
+    ){
+        Attestation storage q = attestations[id];
+        return (q.createdAt, q.resolved, q.finalResult);
+    }
+
+    function getWeighedAttestations(uint256 id, uint256 record) external view returns(int256) {
+        return attestations[id].weighedAttestations[record];
+    }
+
+    function getJuryWeighedAttestations(uint256 id, uint256 record) external view returns(int256) {
+        return attestations[id].juryWeighedAttestations[record];
+    }
+
+    function getOptionAttested(uint256 id) external view returns(uint256, bool) {
+        return (attestations[id].attested[msg.sender].record, attestations[id].attested[msg.sender].choice);
+    }
+
+    function viewAttestationResult(uint256 id) external view returns(uint256, uint256) {
+        return (attestations[id].mostAttested, attestations[id].mostJuryAttested);
+    }
+}
+
