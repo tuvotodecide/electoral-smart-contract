@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "../src/KycRegistry.sol";
-import "../src/HumanOracleWithID.sol";
+import "../src/AttestationOracle.sol";
 
 contract DeployScript is Script {
     function run() external {
