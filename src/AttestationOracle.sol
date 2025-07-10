@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+
 import {IAttestationRecord} from "./interfaces/IAttestationRecord.sol";
 import {IReputation} from "./interfaces/IReputation.sol";
 
-interface IKycRegistry { function balanceOf(address) external view returns (uint256); }
+contract AttestationOracle is AccessControl {
+    bytes32 public constant USER_ROLE = keccak256("USER");
+    bytes32 public constant JURY_ROLE = keccak256("JURY");
+    bytes32 public constant AUTHORITY_ROLE = keccak256("AUTHORITY");
 
-contract AttestationOracle {
     enum AttestationState {
         OPEN,
         VERIFYING,
@@ -34,9 +39,6 @@ contract AttestationOracle {
         AttestationState resolved;
     }
 
-    IKycRegistry public immutable kyc;
-    IKycRegistry public immutable kycJury;
-    IKycRegistry public immutable kycAuthorized;
     IAttestationRecord public immutable attestationRecord;
     IReputation public immutable reputation;
     
@@ -44,32 +46,40 @@ contract AttestationOracle {
     uint256 public totalAttestations;
     Attestation[] private attestations;
 
+    event RegisterRequested(address user, string uri);
     event AttestationCreated(uint256 id, uint256 recordId);
     event Attested();
     event Resolved(uint256 id, AttestationState closeState);
     event InitVerification(uint256 id);
 
-    constructor(address kycRegistry, address kycJuryRegistry, address kycAuthRegistry, address _attestationRecord, address _reputation) {
-        kyc = IKycRegistry(kycRegistry);
-        kycJury = IKycRegistry(kycJuryRegistry);
-        kycAuthorized = IKycRegistry(kycAuthRegistry);
+    constructor(
+        address defaultAdmin,
+        address _attestationRecord,
+        address _reputation
+    ) {
         attestationRecord = IAttestationRecord(_attestationRecord);
         reputation = IReputation(_reputation);
+        _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
 
     modifier onlyVerified() {
-        require(kyc.balanceOf(msg.sender) == 1 || kycJury.balanceOf(msg.sender) == 1, "SBT required");
-        _;
-    }
-
-    modifier onlyAuthorized() {
-        require(kycAuthorized.balanceOf(msg.sender) == 1, "SBT required");
+        require(hasRole(USER_ROLE, msg.sender) || hasRole(JURY_ROLE, msg.sender), "Unauthorized");
         _;
     }
 
     modifier onlyInState(uint256 id, AttestationState state) {
         require(attestations[id].resolved == state, "Bad attestation state");
         _;
+    }
+
+    function requestRegister(string memory uri) external {
+        if(!hasRole(USER_ROLE, msg.sender) && !hasRole(JURY_ROLE, msg.sender)) {
+            emit RegisterRequested(msg.sender, uri);
+        }
+    }
+
+    function register(address user, bool jury) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _grantRole(jury ? JURY_ROLE:USER_ROLE, user);
     }
 
     function createAttestation(string memory uri)
@@ -81,10 +91,15 @@ contract AttestationOracle {
 
         Attestation storage q = attestations.push();
         q.records.push(recordId);
-        q.weighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
-        q.usersAttested.push(msg.sender);
         q.attested[msg.sender] = AttestationChoice(recordId, true);
         q.createdAt = block.timestamp;
+        if(hasRole(USER_ROLE, msg.sender)) {
+            q.usersAttested.push(msg.sender);
+            q.weighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
+        }else{
+            q.juriesAttested.push(msg.sender);
+            q.juryWeighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
+        }
         emit AttestationCreated(id, recordId);
         id = totalAttestations++;
     }
@@ -93,7 +108,7 @@ contract AttestationOracle {
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
 
-        bool isJury = kycJury.balanceOf(msg.sender) == 1;
+        bool isJury = hasRole(JURY_ROLE, msg.sender);
 
         if(bytes(uri).length > 0) {
             uint256 recordId = attestationRecord.safeMint(msg.sender, uri);
@@ -205,7 +220,7 @@ contract AttestationOracle {
         }
     }
 
-    function verifyAttestation(uint256 id, uint256 choice) external onlyAuthorized onlyInState(id, AttestationState.VERIFYING) {
+    function verifyAttestation(uint256 id, uint256 choice) external onlyRole(AUTHORITY_ROLE) onlyInState(id, AttestationState.VERIFYING) {
         Attestation storage q = attestations[id];
         if(q.weighedAttestations[choice] > 0 || q.juryWeighedAttestations[choice] > 0) {
             q.finalResult = choice;

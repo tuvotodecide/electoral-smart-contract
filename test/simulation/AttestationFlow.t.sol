@@ -3,13 +3,11 @@ pragma solidity ^0.8.24;
 import {Test, console} from "forge-std/Test.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {KycRegistry} from "../../src/KycRegistry.sol";
 import {AttestationOracle} from "../../src/AttestationOracle.sol";
 import {Reputation} from "../../src/Reputation.sol";
 import {AttestationRecord} from "../../src/AttestationRecord.sol";
 
 contract AttestationFlowTest is Test {
-
     function initContracts() public returns(
         address user,
         address user2,
@@ -20,9 +18,8 @@ contract AttestationFlowTest is Test {
         AttestationRecord recordNft,
         AttestationOracle oracle
     ) {
-        //address of contract owner off-chain verification
+        //address of contract owner to grant roles and access to reputation and nft
         address owner = address(0x123);
-        (address backendSigner, uint256 backPk) = makeAddrAndKey("backendSigner");
 
         //addresses of user and jury with their dni
         user = address(0x789);
@@ -34,42 +31,42 @@ contract AttestationFlowTest is Test {
         //init reputation contract
         reputation = new Reputation(owner);
 
-        //init user and jury nft for on-chain verification
-        KycRegistry userKeys = new KycRegistry(backendSigner, address(reputation));
-        KycRegistry juryKeys = new KycRegistry(backendSigner, address(reputation));
-        KycRegistry authorizedKeys = new KycRegistry(backendSigner, address(reputation));
-
         //init nft contract for records
         recordNft = new AttestationRecord(owner);
 
         //init oracle
         oracle = new AttestationOracle(
-            address(userKeys),
-            address(juryKeys),
-            address(authorizedKeys),
+            owner,
             address(recordNft),
             address(reputation)
         );
 
+        //register users and jury on oracle
         vm.startPrank(owner);
-        //Authorize oracle access to record and reputation contracts
-        recordNft.setAuthorized(address(oracle), true);
-        reputation.setAuthorized(address(oracle), true);
+        oracle.register(user, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(jury, true);
 
-        //Authorize ntf access to reputation, for initialize user reputation on claim kyc
-        reputation.setAuthorized(address(userKeys), true);
-        reputation.setAuthorized(address(juryKeys), true);
-        reputation.setAuthorized(address(authorizedKeys), true);
+        //Authorize oracle access to record and reputation contracts
+        recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
+        reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
+
+        //Grant authority role manually
+        oracle.grantRole(oracle.AUTHORITY_ROLE(), authorized);
         vm.stopPrank();
 
-        //Claim a user kyc
-        claimKyc(user, backPk, '123456', userKeys, reputation);
-        claimKyc(user2, backPk, '123456', userKeys, reputation);
-        claimKyc(user3, backPk, '123456', userKeys, reputation);
-        claimKyc(jury, backPk, '789010', juryKeys, reputation);
-        claimKyc(authorized, backPk, '111213', authorizedKeys, reputation);
+        //init users reputation
+        vm.prank(user);
+        reputation.initReputation();
+        vm.prank(user2);
+        reputation.initReputation();
+        vm.prank(user3);
+        reputation.initReputation();
+        vm.prank(jury);
+        reputation.initReputation();
     }
-    
+
     //unanimous attestation
     function test_unanimousAttestation() public {
         (
@@ -356,25 +353,5 @@ contract AttestationFlowTest is Test {
         assertEq(reputation.getReputation(), 2);
         vm.prank(jury);
         assertEq(reputation.getReputation(), 2);
-    }
-
-    function signHash(bytes32 userHash, uint256 privateKey) internal pure returns (bytes memory) {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, userHash);
-        return abi.encodePacked(r, s, v);
-    }
-
-    function claimKyc(address user, uint256 backPk, string memory userDni, KycRegistry kyc, Reputation reputation) internal {
-        bytes32 idHash = keccak256(abi.encodePacked(userDni));
-        bytes32 userHash = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n84", user, idHash)
-        );
-        bytes memory userSign = signHash(userHash, backPk);
-        vm.startPrank(user);
-        kyc.claim(idHash, userSign);
-
-        //check user has kyc and has reputation
-        assertEq(kyc.balanceOf(user), 1);
-        assertEq(reputation.getReputation(), 1);
-        vm.stopPrank();
     }
 }
