@@ -3,7 +3,6 @@
 pragma solidity ^0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import {IAttestationRecord} from "./interfaces/IAttestationRecord.sol";
 import {IReputation} from "./interfaces/IReputation.sol";

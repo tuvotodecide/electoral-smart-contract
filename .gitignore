@@ -9,6 +9,8 @@ out/
 
 # Docs
 docs/
+.wake/
+.vscode/
 
 # Dotenv file
 .env
