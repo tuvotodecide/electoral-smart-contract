@@ -36,10 +36,6 @@ contract VerificationFlowTest is Test {
     recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
     reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
     vm.stopPrank();
-
-    //init user reputation
-    vm.prank(user);
-    reputation.initReputation();
   }
 
   function test_createAttestation_emitRegisterEvent() public {

@@ -41,30 +41,20 @@ contract AttestationFlowTest is Test {
             address(reputation)
         );
 
-        //register users and jury on oracle
         vm.startPrank(owner);
+        //Authorize oracle access to record and reputation contracts
+        recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
+        reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
+
+        //register users and jury on oracle
         oracle.register(user, false);
         oracle.register(user2, false);
         oracle.register(user3, false);
         oracle.register(jury, true);
 
-        //Authorize oracle access to record and reputation contracts
-        recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
-        reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
-
         //Grant authority role manually
         oracle.grantRole(oracle.AUTHORITY_ROLE(), authorized);
         vm.stopPrank();
-
-        //init users reputation
-        vm.prank(user);
-        reputation.initReputation();
-        vm.prank(user2);
-        reputation.initReputation();
-        vm.prank(user3);
-        reputation.initReputation();
-        vm.prank(jury);
-        reputation.initReputation();
     }
 
     //unanimous attestation

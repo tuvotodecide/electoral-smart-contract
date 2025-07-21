@@ -27,15 +27,15 @@ contract AttestationOracle is AccessControl {
     struct Attestation {
         uint256 createdAt;
         uint256[] records;
-        mapping(uint256 => int256) weighedAttestations;
-        mapping(uint256 => int256) juryWeighedAttestations;
-        uint256 mostAttested;
-        uint256 mostJuryAttested;
-        uint256 finalResult;
-        address[] usersAttested;
-        address[] juriesAttested;
-        mapping(address => AttestationChoice) attested;
-        AttestationState resolved;
+        mapping(uint256 => int256) weighedAttestations;         //attestation of users for record
+        mapping(uint256 => int256) juryWeighedAttestations;     //attestation of juries for record
+        uint256 mostAttested;                                   //record most attested by users
+        uint256 mostJuryAttested;                               //record most attested by juries
+        uint256 finalResult;                                    //record selected as real on resolve attestation
+        address[] usersAttested;                                //array of users attested (not public)
+        address[] juriesAttested;                               //array of juries attested (not public)
+        mapping(address => AttestationChoice) attested;         //attestation of each user/jury (not public)
+        AttestationState resolved;                              //state of attestation
     }
 
     IAttestationRecord public immutable attestationRecord;
@@ -71,27 +71,38 @@ contract AttestationOracle is AccessControl {
         _;
     }
 
+    //External call by user to init register
     function requestRegister(string memory uri) external {
         if(!hasRole(USER_ROLE, msg.sender) && !hasRole(JURY_ROLE, msg.sender)) {
             emit RegisterRequested(msg.sender, uri);
         }
     }
 
+    //Private call to finish user registering and init reputation
     function register(address user, bool jury) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(jury ? JURY_ROLE:USER_ROLE, user);
+        reputation.initReputationOf(user);
     }
 
+    /**
+     * execute a sequence of transactions
+     * @param uri a string of IPFS json containing record image and data
+     */
     function createAttestation(string memory uri)
         external
         onlyVerified
         returns (uint256 id, uint256 recordId)
     {
+        //mint new NFT for record
         recordId = attestationRecord.safeMint(msg.sender, uri);
 
+        //init new attestation
         Attestation storage q = attestations.push();
         q.records.push(recordId);
         q.attested[msg.sender] = AttestationChoice(recordId, true);
         q.createdAt = block.timestamp;
+
+        //add record with user vote
         if(hasRole(USER_ROLE, msg.sender)) {
             q.usersAttested.push(msg.sender);
             q.weighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
@@ -103,12 +114,20 @@ contract AttestationOracle is AccessControl {
         id = totalAttestations++;
     }
 
+    /**
+     * Participate on existing attestation, setting as real or fake an uploaded record or uploading a new record
+     * @param id index of attestation
+     * @param record record chosen
+     * @param choice attest selected record as real or fake
+     * @param uri IPFS json of new record to attest as real, if uploaded, record and choice are ignored
+     */
     function attest(uint256 id, uint256 record, bool choice, string memory uri) external onlyVerified onlyInState(id, AttestationState.OPEN) {
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
 
         bool isJury = hasRole(JURY_ROLE, msg.sender);
 
+        //add new record if uri is uploaded
         if(bytes(uri).length > 0) {
             uint256 recordId = attestationRecord.safeMint(msg.sender, uri);
             q.records.push(recordId);
@@ -120,8 +139,9 @@ contract AttestationOracle is AccessControl {
                 q.juriesAttested.push(msg.sender);
                 q.juryWeighedAttestations[recordId] = int256(reputation.getReputationOf(msg.sender));
             }
-            
-        } else if(q.weighedAttestations[record] > 0 || q.juryWeighedAttestations[record] > 0) {
+            emit Attested();
+        //check that record exists and register user choice
+        } else if (q.weighedAttestations[record] > 0 || q.juryWeighedAttestations[record] > 0) {
             if(!isJury) {
                 q.usersAttested.push(msg.sender);
                 if(choice) {
@@ -142,15 +162,21 @@ contract AttestationOracle is AccessControl {
         }
     }
 
+    /**
+     * Resolve an attestation after time defined on attestationWindow
+     * @param id index of attestation
+     */
     function resolve(uint256 id) external onlyInState(id, AttestationState.OPEN) {
         Attestation storage q = attestations[id];
         require(block.timestamp >= q.createdAt + attestationWindow, "too soon");
 
+        //Check unanimity if only one record is uploaded
         if(q.records.length == 1) {
             _checkUnanimity(id);
             return;
         }
 
+        //Get most attested record by users
         int256 mostAttestations;
         for(uint256 i = 0; i < q.records.length; i++) {
             int256 attestationCount = q.weighedAttestations[q.records[i]];
@@ -160,6 +186,7 @@ contract AttestationOracle is AccessControl {
             }
         }
 
+        //Get most attested record by juries
         int256 mostJuryAttestations;
         for(uint256 i = 0; i < q.records.length; i++) {
             int256 attestationCount = q.juryWeighedAttestations[q.records[i]];
@@ -173,14 +200,14 @@ contract AttestationOracle is AccessControl {
         if(q.mostAttested > 0 && q.mostJuryAttested == 0) {
             q.finalResult = q.mostAttested;
             _setReputation(id);
-            q.resolved = AttestationState.CLOSED;
+            q.resolved = AttestationState.OBSERVED;
             emit Resolved(id, q.resolved);
         }
         //only juries voted
         else if(q.mostAttested == 0 && q.mostJuryAttested > 0) {
             q.finalResult = q.mostJuryAttested;
             _setReputation(id);
-            q.resolved = AttestationState.CLOSED;
+            q.resolved = AttestationState.OBSERVED;
             emit Resolved(id, q.resolved);
         }
         //most users match most juries
@@ -197,6 +224,11 @@ contract AttestationOracle is AccessControl {
         }
     }
 
+    /**
+     * Check unanimity, if all users and juries voted unique record as real,
+     * attestation is CLOSED, else, is OBSERVED. Also sets users/juries reputation.
+     * @param id index of attestation
+     */
     function _checkUnanimity(uint256 id) private {
         Attestation storage q = attestations[id];
         q.finalResult = q.records[0];
@@ -219,6 +251,12 @@ contract AttestationOracle is AccessControl {
         }
     }
 
+    /**
+     * Set final result for VERIFYING attestation,
+     * only callable by AUTHORITIES
+     * @param id index of attestation
+     * @param choice record selected as real
+     */
     function verifyAttestation(uint256 id, uint256 choice) external onlyRole(AUTHORITY_ROLE) onlyInState(id, AttestationState.VERIFYING) {
         Attestation storage q = attestations[id];
         if(q.weighedAttestations[choice] > 0 || q.juryWeighedAttestations[choice] > 0) {
@@ -228,6 +266,10 @@ contract AttestationOracle is AccessControl {
         }
     }
 
+    /**
+     * Update users/juries reputation given an attestation with a final result
+     * @param id index of attestation
+     */
     function _setReputation(uint256 id) internal {
         Attestation storage q = attestations[id];
         require(q.finalResult != 0, "Not final set");

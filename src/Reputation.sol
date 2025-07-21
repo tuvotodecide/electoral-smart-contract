@@ -20,6 +20,10 @@ contract Reputation is AccessControl {
     reputations[msg.sender] = 1;
   }
 
+  function initReputationOf(address to) external onlyRole(AUTHORIZED_ROLE) {
+    reputations[to] = 1;
+  }
+
   function getReputationOf(address user) external view onlyRole(AUTHORIZED_ROLE) returns(uint256) {
     return reputations[user];
   }
