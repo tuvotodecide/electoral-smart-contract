@@ -6,6 +6,7 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 import {AttestationOracle} from "../../src/AttestationOracle.sol";
 import {Reputation} from "../../src/Reputation.sol";
 import {AttestationRecord} from "../../src/AttestationRecord.sol";
+import {WiraToken} from "../../src/WiraToken.sol";
 
 contract AttestationFlowTest is Test {
     function initContracts() public returns(
@@ -16,7 +17,8 @@ contract AttestationFlowTest is Test {
         address authorized,
         Reputation reputation,
         AttestationRecord recordNft,
-        AttestationOracle oracle
+        AttestationOracle oracle,
+        WiraToken token
     ) {
         //address of contract owner to grant roles and access to reputation and nft
         address owner = address(0x123);
@@ -34,17 +36,27 @@ contract AttestationFlowTest is Test {
         //init nft contract for records
         recordNft = new AttestationRecord(owner);
 
+        //init stake wira token
+        token = new WiraToken(owner, owner, owner);
+
         //init oracle
         oracle = new AttestationOracle(
             owner,
             address(recordNft),
-            address(reputation)
+            address(reputation),
+            address(token),
+            5e18
         );
 
         vm.startPrank(owner);
         //Authorize oracle access to record and reputation contracts
         recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
         reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
+        token.grantRole(token.MINTER_ROLE(), address(oracle));
+
+        //set oracle active period
+        oracle.setActiveTime(0, 200);
+        vm.warp(100);
 
         //register users and jury on oracle
         oracle.register(user, false);
@@ -67,17 +79,16 @@ contract AttestationFlowTest is Test {
             ,
             Reputation reputation,
             AttestationRecord recordNft,
-            AttestationOracle oracle
+            AttestationOracle oracle,
+            WiraToken token
         ) = initContracts();
 
         vm.startPrank(user);
         //user inits a votation updating their first image
-        vm.warp(123);
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
         //check attestation created and user has record nft
-        (uint256 createdAt, AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
-        assertEq(createdAt, 123);
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
         assertEq(recordNft.ownerOf(recordId), user);
@@ -98,21 +109,25 @@ contract AttestationFlowTest is Test {
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 3);
 
         //warp 3 hours and resolve votation
-        vm.warp(4 hours);
+        vm.warp(3 hours);
         oracle.resolve(attestationId);
 
         //check attestation status
-        (createdAt, resolved, finalResult) = oracle.getAttestationInfo(attestationId);
+        (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 3);
         assertEq(finalResult, recordId);
 
-        //check users reputation
+        //three users voted, 15e18 total staking, all voted yes, 5e18 for every user
+        //check users reputation and stake
         vm.prank(user);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user), 5e18);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user2), 5e18);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user3), 5e18);
     }
 
     //users attestation matches juries one, only one record
@@ -125,17 +140,16 @@ contract AttestationFlowTest is Test {
             ,
             Reputation reputation,
             AttestationRecord recordNft,
-            AttestationOracle oracle
+            AttestationOracle oracle,
+            WiraToken token
         ) = initContracts();
 
         vm.startPrank(user);
         //user inits a votation updating their first image
-        vm.warp(123);
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
         //check attestation created and user has record nft
-        (uint256 createdAt, AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
-        assertEq(createdAt, 123);
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
         assertEq(recordNft.ownerOf(recordId), user);
@@ -163,23 +177,29 @@ contract AttestationFlowTest is Test {
         assertEq(oracle.getJuryWeighedAttestations(attestationId, recordId), 1);
 
         //warp 3 hours and resolve votation
-        vm.warp(4 hours);
+        vm.warp(3 hours);
         oracle.resolve(attestationId);
 
         //check attestation status
-        (createdAt, resolved, finalResult) = oracle.getAttestationInfo(attestationId);
-        assertEq(uint256(resolved), 2);
+        (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
+        assertEq(uint256(resolved), 1);
         assertEq(finalResult, recordId);
 
+        //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
+        uint256 userReward = uint(20e18) / uint(3);
         //check users reputation
         vm.prank(user);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user), userReward);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user2), userReward);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 0);
+        assertEq(token.balanceOf(user3), 0);
         vm.prank(jury);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(jury), userReward);
     }
 
     //users attestation matches juries one, two records
@@ -192,17 +212,16 @@ contract AttestationFlowTest is Test {
             ,
             Reputation reputation,
             AttestationRecord recordNft,
-            AttestationOracle oracle
+            AttestationOracle oracle,
+            WiraToken token
         ) = initContracts();
 
         vm.startPrank(user);
         //user inits a votation updating their first image
-        vm.warp(123);
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
         //check attestation created and user has record nft
-        (uint256 createdAt, AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
-        assertEq(createdAt, 123);
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
         assertEq(recordNft.ownerOf(recordId), user);
@@ -235,23 +254,29 @@ contract AttestationFlowTest is Test {
         assertEq(oracle.getJuryWeighedAttestations(attestationId, recordId), 1);
 
         //warp 3 hours and resolve votation
-        vm.warp(4 hours);
+        vm.warp(3 hours);
         oracle.resolve(attestationId);
 
         //check attestation status
-        (createdAt, resolved, finalResult) = oracle.getAttestationInfo(attestationId);
-        assertEq(uint256(resolved), 2);
+        (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
+        assertEq(uint256(resolved), 1);
         assertEq(finalResult, recordId);
 
+        //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
+        uint256 userReward = uint(20e18) / uint(3);
         //check users reputation
         vm.prank(user);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user), userReward);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user2), userReward);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 0);
+        assertEq(token.balanceOf(user3), 0);
         vm.prank(jury);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(jury), userReward);
     }
 
     //users attestation doesn't match juries one
@@ -264,17 +289,16 @@ contract AttestationFlowTest is Test {
             address authorized,
             Reputation reputation,
             AttestationRecord recordNft,
-            AttestationOracle oracle
+            AttestationOracle oracle,
+            WiraToken token
         ) = initContracts();
 
         vm.startPrank(user);
         //user inits a votation updating their first image
-        vm.warp(123);
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
         //check attestation created and user has record nft
-        (uint256 createdAt, AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
-        assertEq(createdAt, 123);
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
         assertEq(recordNft.ownerOf(recordId), user);
@@ -307,41 +331,50 @@ contract AttestationFlowTest is Test {
         assertEq(oracle.getJuryWeighedAttestations(attestationId, record2Id), 1);
 
         //warp 3 hours and resolve votation
-        vm.warp(4 hours);
+        vm.warp(3 hours);
         oracle.resolve(attestationId);
 
         //check attestation is in verification state
-        (createdAt, resolved, finalResult) = oracle.getAttestationInfo(attestationId);
-        assertEq(uint256(resolved), 1);
+        (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
+        assertEq(uint256(resolved), 2);
         assertEq(finalResult, 0);
 
         //check users reputation without changes
         vm.prank(user);
         assertEq(reputation.getReputation(), 1);
+        assertEq(token.balanceOf(user), 0);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 1);
+        assertEq(token.balanceOf(user2), 0);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 1);
+        assertEq(token.balanceOf(user3), 0);
         vm.prank(jury);
         assertEq(reputation.getReputation(), 1);
+        assertEq(token.balanceOf(jury), 0);
 
         //authorized address makes final decision, selection second record
         vm.prank(authorized);
         oracle.verifyAttestation(attestationId, record2Id);
 
         //check attestation state
-        (createdAt, resolved, finalResult) = oracle.getAttestationInfo(attestationId);
+        (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 3);
         assertEq(finalResult, record2Id);
 
+        //four users voted, 20e18 total staking, two was right, 10e18 for every user
         //check reputation changes
         vm.prank(user);
         assertEq(reputation.getReputation(), 0);
+        assertEq(token.balanceOf(user), 0);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 0);
+        assertEq(token.balanceOf(user2), 0);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(user3), 10e18);
         vm.prank(jury);
         assertEq(reputation.getReputation(), 2);
+        assertEq(token.balanceOf(jury), 10e18);
     }
 }

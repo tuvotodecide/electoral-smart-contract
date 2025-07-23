@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 contract Reputation is AccessControl {
-  bytes32 constant AUTHORIZED_ROLE = keccak256("AUTHORIZED");
+  bytes32 public constant AUTHORIZED_ROLE = keccak256("AUTHORIZED");
 
   mapping(address => uint256) private reputations;
 
