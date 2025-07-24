@@ -61,7 +61,7 @@ contract AttestationOracle is AccessControl {
 
     event RegisterRequested(address user, string uri);
     event AttestationCreated(uint256 id, uint256 recordId);
-    event Attested();
+    event Attested(uint256 recordId);
     event Resolved(uint256 id, AttestationState closeState);
     event InitVerification(uint256 id);
 
@@ -155,7 +155,7 @@ contract AttestationOracle is AccessControl {
      * @param choice attest selected record as real or fake
      * @param uri IPFS json of new record to attest as real, if uploaded, record and choice are ignored
      */
-    function attest(uint256 id, uint256 record, bool choice, string memory uri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) {
+    function attest(uint256 id, uint256 record, bool choice, string memory uri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
 
@@ -174,7 +174,8 @@ contract AttestationOracle is AccessControl {
                 q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
             }
             _depositStake(id);
-            emit Attested();
+            emit Attested(recordId);
+            return recordId;
         //check that record exists and register user choice
         } else if (q.userAttestations[record].yesCount > 0 || q.juryAttestations[record].yesCount > 0) {
             if(!isJury) {
@@ -198,15 +199,17 @@ contract AttestationOracle is AccessControl {
             }
             q.attested[msg.sender] = AttestationChoice(record, choice);
             _depositStake(id);
-            emit Attested();
+            emit Attested(record);
+            return record;
         }
+        return 0;
     }
 
     /**
      * Resolve an attestation after time defined on attestationWindow
      * @param id index of attestation
      */
-    function resolve(uint256 id) external onlyInState(id, AttestationState.OPEN) {
+    function resolve(uint256 id) public onlyInState(id, AttestationState.OPEN) {
         Attestation storage q = attestations[id];
         require(block.timestamp > attestEnd, "too soon");
 
@@ -238,7 +241,7 @@ contract AttestationOracle is AccessControl {
 
         //only users voted
         if(q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
-            if(mostAttestations > 0 && q.userAttestations[q.finalResult].yesCount > 2) {
+            if(mostAttestations > 0 && q.userAttestations[q.mostAttested].yesCount > 2) {
                 q.finalResult = q.mostAttested;
                 _setReputation(id);
                 q.resolved = AttestationState.CONSENSUAL;
@@ -291,7 +294,8 @@ contract AttestationOracle is AccessControl {
 
         if(
             !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0) &&
-            !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2)
+            !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2) &&
+            !(q.usersAttested.length == 0 && q.juryAttestations[record].weighedAttestation > 0)
         ){
             q.resolved = AttestationState.VERIFYING;
             emit InitVerification(id);
@@ -370,6 +374,18 @@ contract AttestationOracle is AccessControl {
             q.finalResult = choice;
             _setReputation(id);
             q.resolved = AttestationState.CLOSED;
+        }
+    }
+
+    /**
+    * Resolve all attestations in one callback,
+    */
+    function resolveAll() external {
+        require(block.timestamp > attestEnd, "too soon");
+        
+        uint256 length = attestations.length;
+        for(uint256 i = 0; i < length; i++) {
+            resolve(i);
         }
     }
 
