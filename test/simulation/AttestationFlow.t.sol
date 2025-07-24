@@ -9,26 +9,15 @@ import {AttestationRecord} from "../../src/AttestationRecord.sol";
 import {WiraToken} from "../../src/WiraToken.sol";
 
 contract AttestationFlowTest is Test {
-    function initContracts() public returns(
-        address user,
-        address user2,
-        address user3,
-        address jury,
-        address authorized,
-        Reputation reputation,
-        AttestationRecord recordNft,
-        AttestationOracle oracle,
-        WiraToken token
-    ) {
-        //address of contract owner to grant roles and access to reputation and nft
-        address owner = address(0x123);
+    Reputation reputation;
+    AttestationRecord recordNft;
+    AttestationOracle oracle;
+    WiraToken token;
+    address owner;
 
-        //addresses of user and jury with their dni
-        user = address(0x789);
-        user2 = address(0x1011);
-        user3 = address(0x1213);
-        jury = address(0x1415);
-        authorized = address(0x1617);
+    function setUp() public {
+        //address of contract owner to grant roles and access to reputation and nft
+        owner = makeAddr("owner");
 
         //init reputation contract
         reputation = new Reputation(owner);
@@ -57,33 +46,934 @@ contract AttestationFlowTest is Test {
         //set oracle active period
         oracle.setActiveTime(0, 200);
         vm.warp(100);
+        vm.stopPrank();
+    }
 
-        //register users and jury on oracle
-        oracle.register(user, false);
+    function test_unanimous_1record_1user() public {
+        address user1 = makeAddr("user1");
+
+        //register user 1
+        vm.prank(owner);
+        oracle.register(user1, false);
+
+        //user 1 uploads record
+        vm.prank(user1);
+        (uint256 attestationId, ) = oracle.createAttestation("record 1");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 2: VERIFYING
+        assertEq(uint256(resolved), 2);
+        //check attestation final result not set
+        assertEq(finalResult, 0);
+
+        //check user reputation without changes
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 1);
+        //check user not received stake
+        assertEq(token.balanceOf(user1), 0);
+    }
+
+    function test_unanimous_1record_2users() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        vm.stopPrank();
+
+        //user 1 uploads record
+        vm.prank(user1);
+        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("record 1");
+
+        //user 2 attest record 1
+        vm.prank(user2);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 2: VERIFYING
+        assertEq(uint256(resolved), 2);
+        //check attestation final result not set
+        assertEq(finalResult, 0);
+
+        //check users reputation without changes
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 1);
+
+        //check users not received stake
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user2), 0);
+    }
+
+    function test_unanimous_1record_3users() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
         oracle.register(user2, false);
         oracle.register(user3, false);
-        oracle.register(jury, true);
-
-        //Grant authority role manually
-        oracle.grantRole(oracle.AUTHORITY_ROLE(), authorized);
         vm.stopPrank();
+
+        //user 1 uploads record
+        vm.prank(user1);
+        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("record 1");
+
+        //user 2 attest record 1
+        vm.prank(user2);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //user 3 attest record 1
+        vm.prank(user3);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 3: CLOSED
+        assertEq(uint256(resolved), 3);
+        //check attestation final result set
+        assertEq(finalResult, recordId);
+
+        //check users reputation up
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 2);
+
+        //total stake 15 WIRA, three users was right, 5 WIRA for every user
+        assertEq(token.balanceOf(user1), 5e18);
+        assertEq(token.balanceOf(user2), 5e18);
+        assertEq(token.balanceOf(user3), 5e18);
+    }
+
+    function test_unanimous_1record_1jury() public {
+        address jury1 = makeAddr("jury1");
+
+        //register jury 1
+        vm.prank(owner);
+        oracle.register(jury1, true);
+
+        //jury 1 uploads record
+        vm.prank(jury1);
+        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("record 1");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 3: CLOSED
+        assertEq(uint256(resolved), 3);
+        //check attestation final result set
+        assertEq(finalResult, recordId);
+
+        //check jury reputation up
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 2);
+
+        //total stake: 5 WIRA, all for unique jury
+        assertEq(token.balanceOf(jury1), 5e18);
+    }
+
+    function test_unanimous_1record_3juries() public {
+        address jury1 = makeAddr("jury1");
+        address jury2 = makeAddr("jury2");
+        address jury3 = makeAddr("jury3");
+
+        //register juries
+        vm.startPrank(owner);
+        oracle.register(jury1, true);
+        oracle.register(jury2, true);
+        oracle.register(jury3, true);
+        vm.stopPrank();
+
+        //jury 1 uploads record
+        vm.prank(jury1);
+        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("record 1");
+
+        //jury 2 attest record 1
+        vm.prank(jury2);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //jury 3 attest record 1
+        vm.prank(jury3);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 3: CLOSED
+        assertEq(uint256(resolved), 3);
+        //check attestation final result set
+        assertEq(finalResult, recordId);
+
+        //check juries reputation up
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury2);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury3);
+        assertEq(reputation.getReputation(), 2);
+
+        //total stake: 15 WIRA, three juries was right, 5 WIRA for every jury
+        assertEq(token.balanceOf(jury1), 5e18);
+        assertEq(token.balanceOf(jury2), 5e18);
+        assertEq(token.balanceOf(jury3), 5e18);
+    }
+
+    function test_unanimous_1record_1user_1jury() public {
+        address user1 = makeAddr("user1");
+        address jury1 = makeAddr("jury1");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(jury1, true);
+        vm.stopPrank();
+
+        //user 1 uploads record
+        vm.prank(user1);
+        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("record 1");
+
+        //jury 1 attest record 1
+        vm.prank(jury1);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 3: CLOSED
+        assertEq(uint256(resolved), 3);
+        //check attestation final result set
+        assertEq(finalResult, recordId);
+
+        //check users reputation up
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 2);
+
+        //total stake: 15 WIRA, two users was right, 5 WIRA for every user
+        assertEq(token.balanceOf(user1), 5e18);
+        assertEq(token.balanceOf(jury1), 5e18);
+    }
+
+    function test_unanimous_1record_3users_3juries() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+
+        address jury1 = makeAddr("jury1");
+        address jury2 = makeAddr("jury2");
+        address jury3 = makeAddr("jury3");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(jury1, true);
+        oracle.register(jury2, true);
+        oracle.register(jury3, true);
+        vm.stopPrank();
+
+        //user 1 uploads record
+        vm.prank(user1);
+        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("record 1");
+
+        //users attest record 1
+        vm.prank(user2);
+        oracle.attest(attestationId, recordId, true, "");
+        vm.prank(user3);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //juries attest record 1
+        vm.prank(jury1);
+        oracle.attest(attestationId, recordId, true, "");
+        vm.prank(jury2);
+        oracle.attest(attestationId, recordId, true, "");
+        vm.prank(jury3);
+        oracle.attest(attestationId, recordId, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 3: CLOSED
+        assertEq(uint256(resolved), 3);
+        //check attestation final result set
+        assertEq(finalResult, recordId);
+
+        //check users reputation up
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 2);
+
+        //check juries reputation up
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury2);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury3);
+        assertEq(reputation.getReputation(), 2);
+
+        //total stake: 30 WIRA, all users was right, 5 WIRA for every user
+        assertEq(token.balanceOf(user1), 5e18);
+        assertEq(token.balanceOf(user2), 5e18);
+        assertEq(token.balanceOf(user3), 5e18);
+
+        assertEq(token.balanceOf(jury1), 5e18);
+        assertEq(token.balanceOf(jury2), 5e18);
+        assertEq(token.balanceOf(jury3), 5e18);
+    }
+
+    function test_notUnanimous_3records_3users() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        vm.stopPrank();
+
+        //user 1 uploads record 1
+        vm.prank(user1);
+        (uint256 attestationId, ) = oracle.createAttestation("record 1");
+
+        //user 2 uploads record 2 on same attestation
+        vm.prank(user2);
+        oracle.attest(attestationId, 0, false, "record 2");
+
+        //user 3 uploads record 3 on same attestation
+        vm.prank(user3);
+        oracle.attest(attestationId, 0, false, "record 3");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 2: VERIFYING
+        assertEq(uint256(resolved), 2);
+        //check attestation final result not set
+        assertEq(finalResult, 0);
+
+        //check users reputation not change
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 1);
+
+        //check users not receive stake
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user2), 0);
+        assertEq(token.balanceOf(user3), 0);
+    }
+
+    function test_consensual_3records_5users() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+        address user4 = makeAddr("user4");
+        address user5 = makeAddr("user5");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(user4, false);
+        oracle.register(user5, false);
+        vm.stopPrank();
+
+        //user 1 uploads record 1
+        vm.prank(user1);
+        (uint256 attestationId, ) = oracle.createAttestation("record 1");
+
+        //user 2 uploads record 2 on same attestation
+        vm.prank(user2);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
+
+        //user 3 uploads record 3 on same attestation
+        vm.prank(user3);
+        oracle.attest(attestationId, 0, false, "record 3");
+
+        //users 4,5 attest record 2
+        vm.prank(user4);
+        oracle.attest(attestationId, record2, true, "");
+        vm.prank(user5);
+        oracle.attest(attestationId, record2, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 1: CONSENSUAL
+        assertEq(uint256(resolved), 1);
+        //check attestation final result set
+        assertEq(finalResult, record2);
+
+        //check users 2,4,5 reputation up
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user4);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user5);
+        assertEq(reputation.getReputation(), 2);
+
+        //check users 1,3 reputation down
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 0);
+
+        //total stake: 25 WIRA, three users was rigth, 8.333... WIRA for every user
+        uint256 userReward = uint(25e18) / uint(3);
+
+        //check users 2,4,5 receive stake
+        assertEq(token.balanceOf(user2), userReward);
+        assertEq(token.balanceOf(user4), userReward);
+        assertEq(token.balanceOf(user5), userReward);
+
+
+        //check users 1,3 not receive stake
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user3), 0);
+    }
+
+    function test_consensual_2records_5juries() public {
+        address jury1 = makeAddr("jury1");
+        address jury2 = makeAddr("jury2");
+        address jury3 = makeAddr("jury3");
+        address jury4 = makeAddr("jury4");
+        address jury5 = makeAddr("jury5");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(jury1, false);
+        oracle.register(jury2, false);
+        oracle.register(jury3, false);
+        oracle.register(jury4, false);
+        oracle.register(jury5, false);
+        vm.stopPrank();
+
+        //jury 1 uploads record 1
+        vm.prank(jury1);
+        (uint256 attestationId, uint256 record1) = oracle.createAttestation("record 1");
+
+        //jury 2 uploads record 2 on same attestation
+        vm.prank(jury2);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
+
+        //jury 3 attest record 1
+        vm.prank(jury3);
+        oracle.attest(attestationId, record1, true, "");
+
+        //juries 4,5 attest record 2
+        vm.prank(jury4);
+        oracle.attest(attestationId, record2, true, "");
+        vm.prank(jury5);
+        oracle.attest(attestationId, record2, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 1: CONSENSUAL
+        assertEq(uint256(resolved), 1);
+        //check attestation final result set
+        assertEq(finalResult, record2);
+
+        //check juries 2,4,5 reputation up
+        vm.prank(jury2);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury4);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury5);
+        assertEq(reputation.getReputation(), 2);
+
+        //check juries 1,3 reputation down
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(jury3);
+        assertEq(reputation.getReputation(), 0);
+
+        //total stake: 25 WIRA, three juries was rigth, 8.333... WIRA for every jury
+        uint256 userReward = uint(25e18) / uint(3);
+
+        //check juries 2,4,5 receive stake
+        assertEq(token.balanceOf(jury2), userReward);
+        assertEq(token.balanceOf(jury4), userReward);
+        assertEq(token.balanceOf(jury5), userReward);
+
+        //check juries 1,3 not receive stake
+        assertEq(token.balanceOf(jury1), 0);
+        assertEq(token.balanceOf(jury3), 0);
+    }
+
+    function test_consensual_2records_3users_3juries() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+
+        address jury1 = makeAddr("jury1");
+        address jury2 = makeAddr("jury2");
+        address jury3 = makeAddr("jury3");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(jury1, true);
+        oracle.register(jury2, true);
+        oracle.register(jury3, true);
+        vm.stopPrank();
+
+        //user 1 uploads record 1
+        vm.prank(user1);
+        (uint256 attestationId, uint256 record1) = oracle.createAttestation("record 1");
+
+        //user 2 uploads record 2
+        vm.prank(user2);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
+
+        //user 3 attest record 1
+        vm.prank(user3);
+        oracle.attest(attestationId, record1, true, "");
+
+        //juries 1,2 attest record 1
+        vm.prank(jury1);
+        oracle.attest(attestationId, record1, true, "");
+        vm.prank(jury2);
+        oracle.attest(attestationId, record1, true, "");
+
+        //juriy 3 attest record 2
+        vm.prank(jury3);
+        oracle.attest(attestationId, record2, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 1: CONSENSUAL
+        assertEq(uint256(resolved), 1);
+        //check attestation final result set
+        assertEq(finalResult, record1);
+
+        //check users 1,3 reputation up
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 2);
+
+        //check juries 1,2 reputation up
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(jury2);
+        assertEq(reputation.getReputation(), 2);
+
+        //check user 2 and jury 3 reputation down
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(jury3);
+        assertEq(reputation.getReputation(), 0);
+
+        //total stake: 30 WIRA, four users was right, 7.5 WIRA for every user
+        uint256 userReward = uint(30e18) / uint(4);
+
+        //check users 1,3 and juries 1,2 receive stake
+        assertEq(token.balanceOf(user1), userReward);
+        assertEq(token.balanceOf(user3), userReward);
+        assertEq(token.balanceOf(jury1), userReward);
+        assertEq(token.balanceOf(jury2), userReward);
+
+        //check user 2 and jury 3 not receive stake
+        assertEq(token.balanceOf(user2), 0);
+        assertEq(token.balanceOf(jury3), 0);
+    }
+
+    function test_conflict_3records_5users_4juries() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+        address user4 = makeAddr("user4");
+        address user5 = makeAddr("user5");
+
+        address jury1 = makeAddr("jury1");
+        address jury2 = makeAddr("jury2");
+        address jury3 = makeAddr("jury3");
+        address jury4 = makeAddr("jury4");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(user4, false);
+        oracle.register(user5, false);
+        oracle.register(jury1, true);
+        oracle.register(jury2, true);
+        oracle.register(jury3, true);
+        oracle.register(jury4, true);
+        vm.stopPrank();
+
+        //jury 1 uploads record 1
+        vm.prank(jury1);
+        (uint256 attestationId, uint256 record1) = oracle.createAttestation("record 1");
+
+        //user 1 uploads record 2
+        vm.prank(user1);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
+
+        //user 2 uploads record 3
+        vm.prank(user2);
+        uint256 record3 = oracle.attest(attestationId, 0, false, "record 3");
+
+        //user 3 attest record 1
+        vm.prank(user3);
+        oracle.attest(attestationId, record1, true, "");
+
+        //juries 2,3 attest record 1
+        vm.prank(jury2);
+        oracle.attest(attestationId, record1, true, "");
+        vm.prank(jury3);
+        oracle.attest(attestationId, record1, true, "");
+
+        //users 4,5 attest record 3
+        vm.prank(user4);
+        oracle.attest(attestationId, record3, true, "");
+        vm.prank(user5);
+        oracle.attest(attestationId, record3, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 2: VERIFYING
+        assertEq(uint256(resolved), 2);
+        //check attestation final result not set
+        assertEq(finalResult, 0);
+
+        //check users and juries reputation not change
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user4);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user5);
+        assertEq(reputation.getReputation(), 1);
+
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(jury2);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(jury3);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(jury4);
+        assertEq(reputation.getReputation(), 1);
+
+        //check users and juries not receive stake
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user2), 0);
+        assertEq(token.balanceOf(user3), 0);
+        assertEq(token.balanceOf(user4), 0);
+        assertEq(token.balanceOf(user5), 0);
+
+        assertEq(token.balanceOf(jury1), 0);
+        assertEq(token.balanceOf(jury2), 0);
+        assertEq(token.balanceOf(jury3), 0);
+        assertEq(token.balanceOf(jury4), 0);
+    }
+
+    function test_reputationWeigth_notConsensual_2records_3users() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        vm.stopPrank();
+
+        //up user 3 reputation to 3
+        vm.startPrank(address(oracle));
+        reputation.updateReputation(user3, true);
+        reputation.updateReputation(user3, true);
+        vm.stopPrank();
+
+        //user 1 uploads record 1
+        vm.prank(user1);
+        (uint256 attestationId, uint256 record1) = oracle.createAttestation("record 1");
+
+        //user 2 attest record 1
+        vm.prank(user2);
+        oracle.attest(attestationId, record1, true, "");
+
+        //user 3 uploads record 2
+        vm.prank(user3);
+        oracle.attest(attestationId, 0, false, "record 2");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 2: VERIFYING
+        assertEq(uint256(resolved), 2);
+        //check attestation final result not set
+        assertEq(finalResult, 0);
+
+        //check users reputation not change
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 1);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 3);
+
+        //check users not receive stake
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user2), 0);
+        assertEq(token.balanceOf(user3), 0);
+    }
+
+    function test_reputationWeigth_consensual_2records_5users() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+        address user4 = makeAddr("user4");
+        address user5 = makeAddr("user5");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(user4, false);
+        oracle.register(user5, false);
+        vm.stopPrank();
+
+        //up user 5 reputation to 3
+        vm.startPrank(address(oracle));
+        reputation.updateReputation(user5, true);
+        reputation.updateReputation(user5, true);
+        vm.stopPrank();
+
+        //user 1 uploads record 1
+        vm.prank(user1);
+        (uint256 attestationId, uint256 record1) = oracle.createAttestation("record 1");
+
+        //user 2 attest record 1
+        vm.prank(user2);
+        oracle.attest(attestationId, record1, true, "");
+
+        //user 3 uploads record 2
+        vm.prank(user3);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
+
+        //users 4,5 attest record 2
+        vm.prank(user4);
+        oracle.attest(attestationId, record2, true, "");
+        vm.prank(user5);
+        oracle.attest(attestationId, record2, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 1: CONSENSUAL
+        assertEq(uint256(resolved), 1);
+        //check attestation final result set
+        assertEq(finalResult, record2);
+
+        //check users 3,4,5 reputation up
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user4);
+        assertEq(reputation.getReputation(), 2);
+        vm.prank(user5);
+        assertEq(reputation.getReputation(), 4);
+
+        //check users 1,2 reputation down
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 0);
+
+        //total stake: 25 WIRA, three users was righ, 8.33... WIRA for every user
+        uint256 userReward = uint(25e18) / uint(3);
+
+        //check users 3,4,5 receive stake
+        assertEq(token.balanceOf(user3), userReward);
+        assertEq(token.balanceOf(user4), userReward);
+        assertEq(token.balanceOf(user5), userReward);
+
+        //check users 1,2 not receive stake
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user2), 0);
+    }
+
+    function test_reputationWeigth_consensual_2records_3users_3juries() public {
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+
+        address jury1 = makeAddr("jury1");
+        address jury2 = makeAddr("jury2");
+        address jury3 = makeAddr("jury3");
+
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+
+        oracle.register(jury1, true);
+        oracle.register(jury2, true);
+        oracle.register(jury3, true);
+        vm.stopPrank();
+
+        //up user 3 and jury 3 reputation to 3
+        vm.startPrank(address(oracle));
+        reputation.updateReputation(user3, true);
+        reputation.updateReputation(user3, true);
+        reputation.updateReputation(jury3, true);
+        reputation.updateReputation(jury3, true);
+        vm.stopPrank();
+
+        //user 1 uploads record 1
+        vm.prank(user1);
+        (uint256 attestationId, uint256 record1) = oracle.createAttestation("record 1");
+
+        //user 2 attest record 1
+        vm.prank(user2);
+        oracle.attest(attestationId, record1, true, "");
+
+        //juries 1,2 attest record 1
+        vm.prank(jury1);
+        oracle.attest(attestationId, record1, true, "");
+        vm.prank(jury2);
+        oracle.attest(attestationId, record1, true, "");
+
+        //user 3 uploads record 2
+        vm.prank(user3);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
+
+        //jury 3 attest record 2
+        vm.prank(jury3);
+        oracle.attest(attestationId, record2, true, "");
+
+        //wrap time and resolve
+        vm.warp(201);
+        oracle.resolve(attestationId);
+
+        //check attestation info
+        (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
+        //check attestation status 1: CONSENSUAL
+        assertEq(uint256(resolved), 1);
+        //check attestation final result set
+        assertEq(finalResult, record2);
+
+        //check users 3 and jury 3 reputation up
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 4);
+        vm.prank(user3);
+        assertEq(reputation.getReputation(), 4);
+
+        //check users 1,2 and juries 1,2 reputation down
+        vm.prank(user1);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(user2);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(jury1);
+        assertEq(reputation.getReputation(), 0);
+        vm.prank(jury2);
+        assertEq(reputation.getReputation(), 0);
+
+        //total stake: 30 WIRA, two users was righ, 15 WIRA for every user
+        uint256 userReward = 15e18;
+
+        //check user 3 and jury 3 receive stake
+        assertEq(token.balanceOf(user3), userReward);
+        assertEq(token.balanceOf(jury3), userReward);
+
+        //check users 1,2 and juries 1,2 not receive stake
+        assertEq(token.balanceOf(user1), 0);
+        assertEq(token.balanceOf(user2), 0);
+        assertEq(token.balanceOf(jury1), 0);
+        assertEq(token.balanceOf(jury2), 0);
     }
 
     //unanimous attestation
     function test_unanimousAttestation() public {
-        (
-            address user,
-            address user2,
-            address user3,
-            ,
-            ,
-            Reputation reputation,
-            AttestationRecord recordNft,
-            AttestationOracle oracle,
-            WiraToken token
-        ) = initContracts();
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
 
-        vm.startPrank(user);
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        vm.stopPrank();
+
+        vm.startPrank(user1);
         //user inits a votation updating their first image
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
@@ -91,7 +981,7 @@ contract AttestationFlowTest is Test {
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
-        assertEq(recordNft.ownerOf(recordId), user);
+        assertEq(recordNft.ownerOf(recordId), user1);
         vm.stopPrank();
 
         //user 2 attest yes
@@ -110,7 +1000,7 @@ contract AttestationFlowTest is Test {
 
         //warp 3 hours and resolve votation
         vm.warp(3 hours);
-        oracle.resolve(attestationId);
+        oracle.resolveAll();
 
         //check attestation status
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
@@ -119,9 +1009,9 @@ contract AttestationFlowTest is Test {
 
         //three users voted, 15e18 total staking, all voted yes, 5e18 for every user
         //check users reputation and stake
-        vm.prank(user);
+        vm.prank(user1);
         assertEq(reputation.getReputation(), 2);
-        assertEq(token.balanceOf(user), 5e18);
+        assertEq(token.balanceOf(user1), 5e18);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 2);
         assertEq(token.balanceOf(user2), 5e18);
@@ -132,19 +1022,20 @@ contract AttestationFlowTest is Test {
 
     //users attestation matches juries one, only one record
     function test_usersMatchJuries_oneRecord() public {
-        (
-            address user,
-            address user2,
-            address user3,
-            address jury,
-            ,
-            Reputation reputation,
-            AttestationRecord recordNft,
-            AttestationOracle oracle,
-            WiraToken token
-        ) = initContracts();
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+        address jury1 = makeAddr("jury1");
 
-        vm.startPrank(user);
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(jury1, true);
+        vm.stopPrank();
+
+        vm.startPrank(user1);
         //user inits a votation updating their first image
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
@@ -152,7 +1043,7 @@ contract AttestationFlowTest is Test {
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
-        assertEq(recordNft.ownerOf(recordId), user);
+        assertEq(recordNft.ownerOf(recordId), user1);
         vm.stopPrank();
 
         //user 2 attest yes
@@ -170,7 +1061,7 @@ contract AttestationFlowTest is Test {
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
 
         //jury attest yes
-        vm.prank(jury);
+        vm.prank(jury1);
         oracle.attest(attestationId, recordId, true, "");
 
         //check juries attest added +1
@@ -178,7 +1069,7 @@ contract AttestationFlowTest is Test {
 
         //warp 3 hours and resolve votation
         vm.warp(3 hours);
-        oracle.resolve(attestationId);
+        oracle.resolveAll();
 
         //check attestation status
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
@@ -188,35 +1079,36 @@ contract AttestationFlowTest is Test {
         //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
         uint256 userReward = uint(20e18) / uint(3);
         //check users reputation
-        vm.prank(user);
+        vm.prank(user1);
         assertEq(reputation.getReputation(), 2);
-        assertEq(token.balanceOf(user), userReward);
+        assertEq(token.balanceOf(user1), userReward);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 2);
         assertEq(token.balanceOf(user2), userReward);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 0);
         assertEq(token.balanceOf(user3), 0);
-        vm.prank(jury);
+        vm.prank(jury1);
         assertEq(reputation.getReputation(), 2);
-        assertEq(token.balanceOf(jury), userReward);
+        assertEq(token.balanceOf(jury1), userReward);
     }
 
     //users attestation matches juries one, two records
     function test_usersMatchJuries_twoRecords() public {
-        (
-            address user,
-            address user2,
-            address user3,
-            address jury,
-            ,
-            Reputation reputation,
-            AttestationRecord recordNft,
-            AttestationOracle oracle,
-            WiraToken token
-        ) = initContracts();
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+        address jury1 = makeAddr("jury1");
 
-        vm.startPrank(user);
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(jury1, true);
+        vm.stopPrank();
+
+        vm.startPrank(user1);
         //user inits a votation updating their first image
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
@@ -224,7 +1116,7 @@ contract AttestationFlowTest is Test {
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
-        assertEq(recordNft.ownerOf(recordId), user);
+        assertEq(recordNft.ownerOf(recordId), user1);
         vm.stopPrank();
 
         //user 2 attest yes
@@ -247,7 +1139,7 @@ contract AttestationFlowTest is Test {
         assertEq(oracle.getWeighedAttestations(attestationId, record2Id), 1);
 
         //jury attest yes to first record
-        vm.prank(jury);
+        vm.prank(jury1);
         oracle.attest(attestationId, recordId, true, "");
 
         //check juries attest added +1
@@ -255,7 +1147,7 @@ contract AttestationFlowTest is Test {
 
         //warp 3 hours and resolve votation
         vm.warp(3 hours);
-        oracle.resolve(attestationId);
+        oracle.resolveAll();
 
         //check attestation status
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
@@ -265,35 +1157,38 @@ contract AttestationFlowTest is Test {
         //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
         uint256 userReward = uint(20e18) / uint(3);
         //check users reputation
-        vm.prank(user);
+        vm.prank(user1);
         assertEq(reputation.getReputation(), 2);
-        assertEq(token.balanceOf(user), userReward);
+        assertEq(token.balanceOf(user1), userReward);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 2);
         assertEq(token.balanceOf(user2), userReward);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 0);
         assertEq(token.balanceOf(user3), 0);
-        vm.prank(jury);
+        vm.prank(jury1);
         assertEq(reputation.getReputation(), 2);
-        assertEq(token.balanceOf(jury), userReward);
+        assertEq(token.balanceOf(jury1), userReward);
     }
 
     //users attestation doesn't match juries one
     function test_usersNotMatchJuries() public {
-        (
-            address user,
-            address user2,
-            address user3,
-            address jury,
-            address authorized,
-            Reputation reputation,
-            AttestationRecord recordNft,
-            AttestationOracle oracle,
-            WiraToken token
-        ) = initContracts();
+        address user1 = makeAddr("user1");
+        address user2 = makeAddr("user2");
+        address user3 = makeAddr("user3");
+        address jury1 = makeAddr("jury1");
+        address authority = makeAddr("authority");
 
-        vm.startPrank(user);
+        //register users
+        vm.startPrank(owner);
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(user3, false);
+        oracle.register(jury1, true);
+        oracle.grantRole(oracle.AUTHORITY_ROLE(), authority);
+        vm.stopPrank();
+
+        vm.startPrank(user1);
         //user inits a votation updating their first image
         (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new record");
 
@@ -301,7 +1196,7 @@ contract AttestationFlowTest is Test {
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 0);
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
-        assertEq(recordNft.ownerOf(recordId), user);
+        assertEq(recordNft.ownerOf(recordId), user1);
         vm.stopPrank();
 
         //user 2 attest yes
@@ -324,7 +1219,7 @@ contract AttestationFlowTest is Test {
         assertEq(oracle.getWeighedAttestations(attestationId, record2Id), 1);
 
         //jury attest yes to sencond record
-        vm.prank(jury);
+        vm.prank(jury1);
         oracle.attest(attestationId, record2Id, true, "");
 
         //check juries attest added +1
@@ -332,7 +1227,7 @@ contract AttestationFlowTest is Test {
 
         //warp 3 hours and resolve votation
         vm.warp(3 hours);
-        oracle.resolve(attestationId);
+        oracle.resolveAll();
 
         //check attestation is in verification state
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
@@ -340,21 +1235,21 @@ contract AttestationFlowTest is Test {
         assertEq(finalResult, 0);
 
         //check users reputation without changes
-        vm.prank(user);
+        vm.prank(user1);
         assertEq(reputation.getReputation(), 1);
-        assertEq(token.balanceOf(user), 0);
+        assertEq(token.balanceOf(user1), 0);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 1);
         assertEq(token.balanceOf(user2), 0);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 1);
         assertEq(token.balanceOf(user3), 0);
-        vm.prank(jury);
+        vm.prank(jury1);
         assertEq(reputation.getReputation(), 1);
-        assertEq(token.balanceOf(jury), 0);
+        assertEq(token.balanceOf(jury1), 0);
 
-        //authorized address makes final decision, selection second record
-        vm.prank(authorized);
+        //authority address makes final decision, selection second record
+        vm.prank(authority);
         oracle.verifyAttestation(attestationId, record2Id);
 
         //check attestation state
@@ -364,17 +1259,17 @@ contract AttestationFlowTest is Test {
 
         //four users voted, 20e18 total staking, two was right, 10e18 for every user
         //check reputation changes
-        vm.prank(user);
+        vm.prank(user1);
         assertEq(reputation.getReputation(), 0);
-        assertEq(token.balanceOf(user), 0);
+        assertEq(token.balanceOf(user1), 0);
         vm.prank(user2);
         assertEq(reputation.getReputation(), 0);
         assertEq(token.balanceOf(user2), 0);
         vm.prank(user3);
         assertEq(reputation.getReputation(), 2);
         assertEq(token.balanceOf(user3), 10e18);
-        vm.prank(jury);
+        vm.prank(jury1);
         assertEq(reputation.getReputation(), 2);
-        assertEq(token.balanceOf(jury), 10e18);
+        assertEq(token.balanceOf(jury1), 10e18);
     }
 }
