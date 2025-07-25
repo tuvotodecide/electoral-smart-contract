@@ -9,17 +9,20 @@ import {AttestationRecord} from "../../src/AttestationRecord.sol";
 import {WiraToken} from "../../src/WiraToken.sol";
 
 contract AttestationFlowTest is Test {
-    function initContracts() public returns(
-        address user,
-        address user2,
-        address user3,
-        address jury,
-        address authorized,
-        Reputation reputation,
-        AttestationRecord recordNft,
-        AttestationOracle oracle,
-        WiraToken token
-    ) {
+    function initContracts()
+        public
+        returns (
+            address user,
+            address user2,
+            address user3,
+            address jury,
+            address authorized,
+            Reputation reputation,
+            AttestationRecord recordNft,
+            AttestationOracle oracle,
+            WiraToken token
+        )
+    {
         //address of contract owner to grant roles and access to reputation and nft
         address owner = address(0x123);
 
@@ -40,13 +43,7 @@ contract AttestationFlowTest is Test {
         token = new WiraToken(owner, owner, owner);
 
         //init oracle
-        oracle = new AttestationOracle(
-            owner,
-            address(recordNft),
-            address(reputation),
-            address(token),
-            5e18
-        );
+        oracle = new AttestationOracle(owner, address(recordNft), address(reputation), address(token), 5e18);
 
         vm.startPrank(owner);
         //Authorize oracle access to record and reputation contracts
@@ -186,7 +183,7 @@ contract AttestationFlowTest is Test {
         assertEq(finalResult, recordId);
 
         //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
-        uint256 userReward = uint(20e18) / uint(3);
+        uint256 userReward = uint256(20e18) / uint256(3);
         //check users reputation
         vm.prank(user);
         assertEq(reputation.getReputation(), 2);
@@ -263,7 +260,7 @@ contract AttestationFlowTest is Test {
         assertEq(finalResult, recordId);
 
         //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
-        uint256 userReward = uint(20e18) / uint(3);
+        uint256 userReward = uint256(20e18) / uint256(3);
         //check users reputation
         vm.prank(user);
         assertEq(reputation.getReputation(), 2);

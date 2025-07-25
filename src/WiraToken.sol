@@ -10,9 +10,7 @@ contract WiraToken is ERC20, ERC20Burnable, ERC20Pausable, AccessControl {
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
-    constructor(address defaultAdmin, address pauser, address minter)
-        ERC20("Wira", "WIRA")
-    {
+    constructor(address defaultAdmin, address pauser, address minter) ERC20("Wira", "WIRA") {
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
         _grantRole(PAUSER_ROLE, pauser);
         _grantRole(MINTER_ROLE, minter);
@@ -32,10 +30,7 @@ contract WiraToken is ERC20, ERC20Burnable, ERC20Pausable, AccessControl {
 
     // The following functions are overrides required by Solidity.
 
-    function _update(address from, address to, uint256 value)
-        internal
-        override(ERC20, ERC20Pausable)
-    {
+    function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Pausable) {
         super._update(from, to, value);
     }
 }
