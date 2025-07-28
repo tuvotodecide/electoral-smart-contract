@@ -2,21 +2,16 @@
 pragma solidity ^0.8.24;
 
 /**
- * Dev_ : Sanchez Brayan
- * Fecha: jueves 24 julio 07 del 2025
- * Revisar contrato analizarlo y realizar testing al contrato
- * posteriormente se analiza si es importante desarrollar mejoras en el cual se el hecho de minimizar el consumo de gas
- * : implmenetacion : reducir el uso de for o plantear otra logica para desarrollar de otro modo el uso de ciclos, usar contadore en los arreglos!
- * implementaciones acomplementadas en el uso de condicionales y evitar el uso de ciclos por el gasto de gas
+ * Dev_ : Sanchez Brayan - 0xronaldo
+ * Fecha: jueves 25 julio 07 del 2025
  * 
+ * : implmenetacion : Se propone mejorar el contrato con el que se realize optimizaciones y reducir el consumo de gas en el que se complemente las actividades. revisar !
  */
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
 import {IAttestationRecord} from "./interfaces/IAttestationRecord.sol";
 import {IReputation} from "./interfaces/IReputation.sol";
 import {IWiraToken} from "./interfaces/IWiraToken.sol";
-
 
 // struct revisar  ...
 contract AttestationOracle is AccessControl {
@@ -35,68 +30,43 @@ contract AttestationOracle is AccessControl {
         VERIFYING,
         CLOSED
     }
-    // divisiones en cada apartado
-    // primera estructa 
+    // divisiones en cada apartado ...
+
     struct AttestationChoice {
         uint256 record;
         bool choice;
     }
+    // segunda estructura .... | mayor consumo
 
-    // segunda estructura ....
     struct RecordAttestation {
         uint256 yesCount;
         uint256 noesCount;
         int256 weighedAttestation;
     }
     // tercera estructura | revisar
-    struct Attestation {
-        // se cambio los arreglos a mappings y no realizar un get conjunto 
-        mapping(uint256 => RecordAttestation) juryAttestations; //attestation of juries for record
-        mapping(uint256 => RecordAttestation) userAttestations; //attestation of users for record    
-        uint256 recordCount;
-        uint256 firstRecord;
-        // -- add new logic aplication mapping <- arrays
-        mapping(address => bool) userParticipated;
-        mapping(address => bool) juryParticipated;
-        uint256 userCount;
-        uint256 juryCount;
 
+    struct Attestation {
+        uint256[] records;
         uint256 cumulatedStake; //cumulated stake to redistrubute
+        mapping(uint256 => RecordAttestation) userAttestations; //attestation of users for record
+        mapping(uint256 => RecordAttestation) juryAttestations; //attestation of juries for record
         uint256 mostAttested; //record most attested by users
         uint256 mostJuryAttested; //record most attested by juries
         uint256 finalResult; //record selected as real on resolve attestation
-        mapping(uint256 => bool) recordExists;
-        uint256[] records;
-        // arreglos
         address[] usersAttested; //array of users attested (not public)
         address[] juriesAttested; //array of juries attested (not public)
         mapping(address => AttestationChoice) attested; //attestation of each user/jury (not public)
         AttestationState resolved; //state of attestation
-
-        uint256 maxUserWeighedRecord;     // Record con mayor peso de usuarios
-        int256 maxUserWeighedValue;       // Value máx of peso de usuarios
-        uint256 maxJuryWeighedRecord;     // Record con mayor peso de jurados
-        int256 maxJuryWeighedValue;       // Valor máximo de peso de jurados
-        // creacion del estado de la distribucion
-        mapping(address => bool) hasClaimedReward;
-        bool distributionEnabled;
-        uint256 rewardPerParticipant;
-
-
     }
 
     IAttestationRecord public immutable attestationRecord;
     IReputation public immutable reputation;
     IWiraToken public immutable stakeToken;
     uint256 public stake;
-    uint256 public attestationWindow = 2 hours; // time max 
+    uint256 public attestationWindow = 2 hours;
     uint256 public totalAttestations;
-
-
-    // convertido a mapping 
-    /// uint256 Attestation  private attestations;
-    mapping(uint256 => Attestation) private attestations;
-
+    Attestation[] private attestations;
+    // eventos
     event RegisterRequested(address user, string uri);
     event AttestationCreated(uint256 id, uint256 recordId);
     event Attested();
@@ -142,17 +112,15 @@ contract AttestationOracle is AccessControl {
     // 2
     //Private call to finish user registering and init reputation
 
-    // funcion 2 registro usuario/role
     function register(address user, bool jury) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(jury ? JURY_ROLE : USER_ROLE, user);
         reputation.initReputationOf(user);
     }
 
-    
+    // 3
     /**
      * make a stake deposit of an attestation to redistribute on resolve
      */
-    // funcion staking 
     function _depositStake(uint256 id) private {
         stakeToken.mint(address(this), stake);
         attestations[id].cumulatedStake += stake;
@@ -163,8 +131,6 @@ contract AttestationOracle is AccessControl {
      * @param uri a string of IPFS json containing record image and data
      */
     // 4
-
-
     function createAttestation(string memory uri)
         external
         onlyVerified
@@ -173,45 +139,21 @@ contract AttestationOracle is AccessControl {
     {
         //mint new NFT for record
         recordId = attestationRecord.safeMint(msg.sender, uri);
-        // se incrementa
-        id = totalAttestations++;
-        //init new attestation
-        // Attestation storage q = attestations.push();
-        Attestation storage q = attestations[id];
-        q.recordExists[recordId] = true;
-        q.recordCount = 1;
-        q.firstRecord = recordId;
 
-        //q.records.push(recordId);
+        //init new attestation
+        Attestation storage q = attestations.push();
+        q.records.push(recordId);
         q.attested[msg.sender] = AttestationChoice(recordId, true);
 
         //add record with user vote
-        //if (hasRole(USER_ROLE, msg.sender)) {
-        bool isJury = hasRole(JURY_ROLE, msg.sender);
-        // implicita var userReputation
-        //uint256 userReputation = uint256(reputation.getReputationOf(msg.sender));
-        int256 userReputation = int256(reputation.getReputationOf(msg.sender));
-
-        if (isJury) {
-            q.juryParticipated[msg.sender] = true;
-            q.juryCount = 1;
-            q.juryAttestations[recordId] = RecordAttestation(1, 0, userReputation);
-            
-        } else {
-            q.userParticipated[msg.sender] = true;
-            q.userCount = 1;
-            q.userAttestations[recordId] = RecordAttestation(1, 0, userReputation);
-            
-        }
-        
-        /*if (!isJury) {
+        if (hasRole(USER_ROLE, msg.sender)) {
             q.usersAttested.push(msg.sender);
-            q.userAttestations[recordId] = RecordAttestation(1, 0, //int256(reputation.getReputationOf(msg.sender)));
+            q.userAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
         } else {
             q.juriesAttested.push(msg.sender);
             q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
-        }*/
-        //id = totalAttestations++;
+        }
+        id = totalAttestations++;
 
         //deposit first stake
         _depositStake(id);
@@ -278,29 +220,6 @@ contract AttestationOracle is AccessControl {
         }
     }
 
-
-
-
-    // despues de los atestiguamientos
-    function _upprecalcMostAttested(uint256 id, uint256 record, bool isJury, int256 newWeight) private {
-    Attestation storage q = attestations[id];
-    
-    if (isJury) {
-        if (newWeight > q.maxJuryWeighedValue) {
-            q.maxJuryWeighedValue = newWeight;
-            q.maxJuryWeighedRecord = record;
-            q.mostJuryAttested = record;
-        }
-    } else {
-        if (newWeight > q.maxUserWeighedValue) {
-            q.maxUserWeighedValue = newWeight;
-            q.maxUserWeighedRecord = record;
-            q.mostAttested = record;
-        }
-    }
-}
-
-
     /**
      * Resolve an attestation after time defined on attestationWindow
      * @param id index of attestation
@@ -311,93 +230,30 @@ contract AttestationOracle is AccessControl {
         require(block.timestamp > attestEnd, "too soon");
 
         //Check unanimity if only one record is uploaded
-        // en caso de un solo guardado...
         if (q.records.length == 1) {
             _checkUnanimity(id);
             return;
         }
 
-
-
-/*
-      // Gas-optimized approach: Use pre-tracked mostAttested value
-        // The mostAttested should be updated during each attest() call
-        uint256 mostAttestations = q.userAttestations[q.mostAttested].weighedAttestation;
-        
-        // No loops needed - mostAttested is maintained during attestation process
-        // If no mostAttested is set, use the first record
-        if (q.mostAttested == 0) {
-            q.mostAttested = q.firstRecord;
-            mostAttestations = q.userAttestations[q.firstRecord].weighedAttestation;
-        }*/
         //Get most attested record by users
-
-        // each
-        /*int256 mostAttestations = q.userAttestations[q.mostAttested].weighedAttestation;
-        //uint256 i = 0;
-
-        if (q.mostAttested == 0) {
-            // If no mostAttested is set, use the first record
-            q.mostAttested = q.firstRecord;
-            mostAttestations = q.userAttestations[q.firstRecord].weighedAttestation;
-
-        }*/
-        //for (i ; i < q.records.length; i++) {
-            //int256 attestationCount = q.userAttestations[q.records[i]].weighedAttestation;
-            //if (attestationCount > mostAttestations) {
-            //    mostAttestations = attestationCount;
-            //    q.mostAttested = q.records[i];
-            //}
-        //}
-        int256 mostAttestations = q.maxUserWeighedValue;
-        
-        int256 mostJuryAttestations = q.maxJuryWeighedValue;
-
-
-        if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
-            if (mostAttestations > 0 && q.userAttestations[q.mostAttested].yesCount > 2) {
-                q.finalResult = q.mostAttested;
-                _setReputation(id);
-                q.resolved = AttestationState.CONSENSUAL;
-                emit Resolved(id, q.resolved);
-            } else {
-                q.resolved = AttestationState.VERIFYING;
-                emit InitVerification(id);
+        int256 mostAttestations;
+        for (uint256 i = 0; i < q.records.length; i++) {
+            int256 attestationCount = q.userAttestations[q.records[i]].weighedAttestation;
+            if (attestationCount > mostAttestations) {
+                mostAttestations = attestationCount;
+                q.mostAttested = q.records[i];
             }
-        } // ya no se almacena q.records
-        /*else if (q.usersAttested.length == 0 && q.juriesAttested.length > 0) {
-            if (mostJuryAttestations > 0) {
-                q.finalResult = q.mostJuryAttested;
-                _setReputation(id);
-                q.resolved = AttestationState.CONSENSUAL;
-                emit Resolved(id, q.resolved);
-            } else {
-                q.resolved = AttestationState.VERIFYING;
-                emit InitVerification(id);
-            }
-        } else if (q.mostAttested == q.mostJuryAttested) {
-            if (mostAttestations > 0 && mostJuryAttestations > 0) {
-                q.finalResult = q.mostAttested;
-                _setReputation(id);
-                q.resolved = AttestationState.CONSENSUAL;
-                emit Resolved(id, q.resolved);
-            } else {
-                q.resolved = AttestationState.VERIFYING;
-                emit InitVerification(id);
-            }
-        } else {
-            q.resolved = AttestationState.VERIFYING;
-            emit InitVerification(id);
-        }*///revisar
+        }
+
         //Get most attested record by juries
-        //int256 mostJuryAttestations;
-        /*for (uint256 i = 0; i < q.records.length; i++) {
+        int256 mostJuryAttestations;
+        for (uint256 i = 0; i < q.records.length; i++) {
             int256 attestationCount = q.juryAttestations[q.records[i]].weighedAttestation;
             if (attestationCount > mostJuryAttestations) {
                 mostJuryAttestations = attestationCount;
                 q.mostJuryAttested = q.records[i];
             }
-        }*/
+        }
 
         //only users voted
         if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
@@ -451,12 +307,8 @@ contract AttestationOracle is AccessControl {
     // 7
     function _checkUnanimity(uint256 id) private {
         Attestation storage q = attestations[id];
+        uint256 record = q.records[0];
 
-        // q.records[0] -> q.firts.record;
-        //uint256 record = q.records[0];
-        uint256 record = q.firstRecord;
-        
-        
         if (
             !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0)
                 && !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2)
@@ -464,37 +316,23 @@ contract AttestationOracle is AccessControl {
             q.resolved = AttestationState.VERIFYING;
             emit InitVerification(id);
             return;
+
+
+
+            
         }
 
-        //q.finalResult = q.records[0];
-        /*
+        q.finalResult = q.records[0];
         uint256 distributionAmount =
             q.cumulatedStake / (q.userAttestations[q.finalResult].yesCount + q.juryAttestations[q.finalResult].yesCount);
-        */
-        
-        q.finalResult = record;
-        q.distributionEnabled = true;
-        q.rewardPerParticipant = q.cumulatedStake / (q.userAttestations[record].yesCount + q.juryAttestations[record].yesCount);
 
-
-        // uint256 distributionAmount = q.cumulatedStake / (q.userAttestations[record].yesCount + q.juryAttestations[record].yesCount);
-
-        /*for (uint256 i = 0; i < q.usersAttested.length; i++) {
+        for (uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
             reputation.updateReputation(user, q.attested[user].choice);
             if (q.attested[user].choice) {
                 stakeToken.safeTransfer(user, distributionAmount);
             }
-        }*/
-
-        if (q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
-        q.resolved = AttestationState.CONSENSUAL;
-        } else {
-            q.resolved = AttestationState.CLOSED;
         }
-    }
-
-/*
 
         for (uint256 i = 0; i < q.juriesAttested.length; i++) {
             address jury = q.juriesAttested[i];
@@ -510,40 +348,6 @@ contract AttestationOracle is AccessControl {
             q.resolved = AttestationState.CLOSED;
         }
     }
-    */
-
-   function distributeUserRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
-    Attestation storage q = attestations[id];
-    require(q.distributionEnabled, "Distribution not enabled");
-    require(endIndex <= q.usersAttested.length, "Index out of bounds");
-    
-    for (uint256 i = startIndex; i < endIndex; i++) {
-        address user = q.usersAttested[i];
-        if (!q.hasClaimedReward[user] && q.attested[user].choice) {
-            q.hasClaimedReward[user] = true;
-            stakeToken.safeTransfer(user, q.rewardPerParticipant);
-            reputation.updateReputation(user, true);
-        }
-    }
-}
-
-// Función separada para distribución por lotes de jurados
-function distributeJuryRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
-    Attestation storage q = attestations[id];
-    require(q.distributionEnabled, "Distribution not enabled");
-    require(endIndex <= q.juriesAttested.length, "Index out of bounds");
-    
-    for (uint256 i = startIndex; i < endIndex; i++) {
-        address jury = q.juriesAttested[i];
-        if (!q.hasClaimedReward[jury] && q.attested[jury].choice) {
-            q.hasClaimedReward[jury] = true;
-            stakeToken.safeTransfer(jury, q.rewardPerParticipant);
-            reputation.updateReputation(jury, true);
-        }
-    }
-}
-
-
 
     /**
      * Update users/juries reputation given an attestation with a final result
