@@ -311,8 +311,7 @@ contract AttestationOracle is AccessControl {
         require(block.timestamp > attestEnd, "too soon");
 
         //Check unanimity if only one record is uploaded
-        // en caso de un solo guardado...
-        if (q.records.length == 1) {
+        if(q.records.length == 1) {
             _checkUnanimity(id);
             return;
         }
@@ -342,19 +341,23 @@ contract AttestationOracle is AccessControl {
             mostAttestations = q.userAttestations[q.firstRecord].weighedAttestation;
 
         }*/
-        //for (i ; i < q.records.length; i++) {
-            //int256 attestationCount = q.userAttestations[q.records[i]].weighedAttestation;
-            //if (attestationCount > mostAttestations) {
-            //    mostAttestations = attestationCount;
-            //    q.mostAttested = q.records[i];
-            //}
-        //}
-        int256 mostAttestations = q.maxUserWeighedValue;
+
+        //Get most attested record by users
+        int256 mostAttestations;
+
+        for (uint256 i = 0 ; i < q.records.length; i++) {
+            int256 attestationCount = q.userAttestations[q.records[i]].weighedAttestation;
+            if (attestationCount > mostAttestations) {
+                mostAttestations = attestationCount;
+                q.mostAttested = q.records[i];
+            }
+        }
+        //int256 mostAttestations = q.maxUserWeighedValue;
         
-        int256 mostJuryAttestations = q.maxJuryWeighedValue;
+        //int256 mostJuryAttestations = q.maxJuryWeighedValue;
 
 
-        if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
+        /*if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
             if (mostAttestations > 0 && q.userAttestations[q.mostAttested].yesCount > 2) {
                 q.finalResult = q.mostAttested;
                 _setReputation(id);
@@ -390,14 +393,15 @@ contract AttestationOracle is AccessControl {
             emit InitVerification(id);
         }*///revisar
         //Get most attested record by juries
-        //int256 mostJuryAttestations;
-        /*for (uint256 i = 0; i < q.records.length; i++) {
+        int256 mostJuryAttestations;
+        for(uint256 i = 0; i < q.records.length; i++) {
             int256 attestationCount = q.juryAttestations[q.records[i]].weighedAttestation;
-            if (attestationCount > mostJuryAttestations) {
+            if(attestationCount > mostJuryAttestations) {
                 mostJuryAttestations = attestationCount;
                 q.mostJuryAttested = q.records[i];
             }
-        }*/
+        }
+
 
         //only users voted
         if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
@@ -441,6 +445,7 @@ contract AttestationOracle is AccessControl {
             emit InitVerification(id);
         }
     }
+   
 
     /**
      * Check unanimity, if all users and juries voted unique record as real,
@@ -448,15 +453,15 @@ contract AttestationOracle is AccessControl {
      * Also sets users/juries reputation.
      * @param id index of attestation
      */
-    // 7
+    //
     function _checkUnanimity(uint256 id) private {
         Attestation storage q = attestations[id];
 
         // q.records[0] -> q.firts.record;
-        //uint256 record = q.records[0];
-        uint256 record = q.firstRecord;
+        uint256 record = q.records[0];
+        //uint256 record = q.firstRecord;
         
-        
+
         if (
             !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0)
                 && !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2)
@@ -466,35 +471,33 @@ contract AttestationOracle is AccessControl {
             return;
         }
 
-        //q.finalResult = q.records[0];
-        /*
+        q.finalResult = q.records[0];
+        
         uint256 distributionAmount =
             q.cumulatedStake / (q.userAttestations[q.finalResult].yesCount + q.juryAttestations[q.finalResult].yesCount);
-        */
         
-        q.finalResult = record;
+        
+        /*q.finalResult = record;
         q.distributionEnabled = true;
-        q.rewardPerParticipant = q.cumulatedStake / (q.userAttestations[record].yesCount + q.juryAttestations[record].yesCount);
+        q.rewardPerParticipant = q.cumulatedStake / (q.userAttestations[record].yesCount + q.juryAttestations[record].yesCount);*/
 
 
         // uint256 distributionAmount = q.cumulatedStake / (q.userAttestations[record].yesCount + q.juryAttestations[record].yesCount);
 
-        /*for (uint256 i = 0; i < q.usersAttested.length; i++) {
+        for (uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
             reputation.updateReputation(user, q.attested[user].choice);
             if (q.attested[user].choice) {
                 stakeToken.safeTransfer(user, distributionAmount);
             }
-        }*/
+        }
 
-        if (q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
+        /*if (q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
         q.resolved = AttestationState.CONSENSUAL;
         } else {
             q.resolved = AttestationState.CLOSED;
-        }
-    }
+        }*/
 
-/*
 
         for (uint256 i = 0; i < q.juriesAttested.length; i++) {
             address jury = q.juriesAttested[i];
@@ -510,9 +513,9 @@ contract AttestationOracle is AccessControl {
             q.resolved = AttestationState.CLOSED;
         }
     }
-    */
+    
 
-   function distributeUserRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
+   /*function distributeUserRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
     Attestation storage q = attestations[id];
     require(q.distributionEnabled, "Distribution not enabled");
     require(endIndex <= q.usersAttested.length, "Index out of bounds");
@@ -525,23 +528,23 @@ contract AttestationOracle is AccessControl {
             reputation.updateReputation(user, true);
         }
     }
-}
+}*/
 
-// Función separada para distribución por lotes de jurados
-function distributeJuryRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
-    Attestation storage q = attestations[id];
-    require(q.distributionEnabled, "Distribution not enabled");
-    require(endIndex <= q.juriesAttested.length, "Index out of bounds");
-    
-    for (uint256 i = startIndex; i < endIndex; i++) {
-        address jury = q.juriesAttested[i];
-        if (!q.hasClaimedReward[jury] && q.attested[jury].choice) {
-            q.hasClaimedReward[jury] = true;
-            stakeToken.safeTransfer(jury, q.rewardPerParticipant);
-            reputation.updateReputation(jury, true);
+    /*
+    function distributeJuryRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
+        Attestation storage q = attestations[id];
+        require(q.distributionEnabled, "Distribution not enabled");
+        require(endIndex <= q.juriesAttested.length, "Index out of bounds");
+        
+        for (uint256 i = startIndex; i < endIndex; i++) {
+            address jury = q.juriesAttested[i];
+            if (!q.hasClaimedReward[jury] && q.attested[jury].choice) {
+                q.hasClaimedReward[jury] = true;
+                stakeToken.safeTransfer(jury, q.rewardPerParticipant);
+                reputation.updateReputation(jury, true);
+            }
         }
-    }
-}
+    }*/
 
 
 
