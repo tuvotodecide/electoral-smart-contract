@@ -57,13 +57,14 @@ contract AttestationOracle is AccessControl {
     IWiraToken public immutable stakeToken;
     uint256 public stake;
     uint256 public totalAttestations;
-    Attestation[] private attestations;
+    mapping(string => Attestation) private attestations;
 
     event RegisterRequested(address user, string uri);
-    event AttestationCreated(uint256 id, uint256 recordId);
+    event AttestationCreated(string id, uint256 recordId);
     event Attested(uint256 recordId);
-    event Resolved(uint256 id, AttestationState closeState);
-    event InitVerification(uint256 id);
+    event ReputationUpdated(string id, address user, bool up);
+    event Resolved(string id, AttestationState closeState);
+    event InitVerification(string id);
     event Participated(address user, uint256 nftId);
 
     constructor(
@@ -92,13 +93,13 @@ contract AttestationOracle is AccessControl {
         _;
     }
 
-    modifier onlyInState(uint256 id, AttestationState state) {
+    modifier onlyInState(string calldata id, AttestationState state) {
         require(attestations[id].resolved == state, "Bad attestation state");
         _;
     }
 
     //External call by user to init register
-    function requestRegister(string memory uri) external onlyActive {
+    function requestRegister(string calldata uri) external onlyActive {
         if(!hasRole(USER_ROLE, msg.sender) && !hasRole(JURY_ROLE, msg.sender)) {
             emit RegisterRequested(msg.sender, uri);
         }
@@ -113,7 +114,7 @@ contract AttestationOracle is AccessControl {
     /**
      * make a stake deposit of an attestation to redistribute on resolve
      */
-    function _depositStake(uint256 id) private {
+    function _depositStake(string calldata id) private {
         stakeToken.mint(address(this), stake);
         attestations[id].cumulatedStake += stake;
     }
@@ -122,7 +123,7 @@ contract AttestationOracle is AccessControl {
      * Mint a participation NFT if user doesn't have one yet
      * @param uri a string of IPFS json containing participation image and data
      */
-    function _mintParticipationNft(string memory uri) private {
+    function _mintParticipationNft(string calldata uri) private {
         if(participation.balanceOf(msg.sender) == 0) {
             uint256 nftId = participation.safeMint(msg.sender, uri);
             emit Participated(msg.sender, nftId);
@@ -131,20 +132,21 @@ contract AttestationOracle is AccessControl {
 
     /**
      * execute a sequence of transactions
+     * @param id attestation identifier
      * @param uri a string of IPFS json containing record image and data
      * @param participationUri a string of IPFS json containing participation image and data if needed
      */
-    function createAttestation(string memory uri, string memory participationUri)
+    function createAttestation(string calldata id, string calldata uri, string calldata participationUri)
         external
         onlyVerified
         onlyActive
-        returns (uint256 id, uint256 recordId)
+        returns (uint256 recordId)
     {
+        Attestation storage q = attestations[id];
+        require(q.records.length == 0, "Already created");
+
         //mint new NFT for record
         recordId = attestationRecord.safeMint(msg.sender, uri);
-
-        //init new attestation
-        Attestation storage q = attestations.push();
         q.records.push(recordId);
         q.attested[msg.sender] = AttestationChoice(recordId, true);
 
@@ -156,7 +158,7 @@ contract AttestationOracle is AccessControl {
             q.juriesAttested.push(msg.sender);
             q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
         }
-        id = totalAttestations++;
+        totalAttestations++;
         //deposit first stake
         _depositStake(id);
         _mintParticipationNft(participationUri);
@@ -165,13 +167,13 @@ contract AttestationOracle is AccessControl {
 
     /**
      * Participate on existing attestation, setting as real or fake an uploaded record or uploading a new record
-     * @param id index of attestation
+     * @param id attestation identifier
      * @param record record chosen
      * @param choice attest selected record as real or fake
      * @param uri IPFS json of new record to attest as real, if uploaded, record and choice are ignored
      * @param participationUri a string of IPFS json containing participation image and data if needed
      */
-    function attest(uint256 id, uint256 record, bool choice, string memory uri, string memory participationUri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
+    function attest(string calldata id, uint256 record, bool choice, string calldata uri, string calldata participationUri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
 
@@ -225,9 +227,9 @@ contract AttestationOracle is AccessControl {
 
     /**
      * Resolve an attestation after time defined on attestationWindow
-     * @param id index of attestation
+     * @param id attestation identifier
      */
-    function resolve(uint256 id) public onlyInState(id, AttestationState.OPEN) {
+    function resolve(string calldata id) public onlyInState(id, AttestationState.OPEN) {
         Attestation storage q = attestations[id];
         require(block.timestamp > attestEnd, "too soon");
 
@@ -304,9 +306,9 @@ contract AttestationOracle is AccessControl {
      * Check unanimity, if all users and juries voted unique record as real,
      * attestation is CLOSED, else if mostly voted real, is OBSERVED.
      * Also sets users/juries reputation.
-     * @param id index of attestation
+     * @param id attestation identifier
      */
-    function _checkUnanimity(uint256 id) private {
+    function _checkUnanimity(string calldata id) private {
         Attestation storage q = attestations[id];
         uint256 record = q.records[0];
 
@@ -328,16 +330,20 @@ contract AttestationOracle is AccessControl {
         
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
-            reputation.updateReputation(user, q.attested[user].choice);
-            if(q.attested[user].choice) {
+            bool up = q.attested[user].choice;
+            reputation.updateReputation(user, up);
+            emit ReputationUpdated(id, user, up);
+            if(up) {
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
 
         for(uint256 i = 0; i < q.juriesAttested.length; i++) {
             address jury = q.juriesAttested[i];
-            reputation.updateReputation(jury, q.attested[jury].choice);
-            if(q.attested[jury].choice) {
+            bool up = q.attested[jury].choice;
+            reputation.updateReputation(jury, up);
+            emit ReputationUpdated(id, jury, up);
+            if(up) {
                 stakeToken.safeTransfer(jury, distributionAmount);
             }
         }
@@ -351,9 +357,9 @@ contract AttestationOracle is AccessControl {
 
     /**
      * Update users/juries reputation given an attestation with a final result
-     * @param id index of attestation
+     * @param id attestation identifier
      */
-    function _setReputation(uint256 id) internal {
+    function _setReputation(string calldata id) internal {
         Attestation storage q = attestations[id];
         require(q.finalResult != 0, "Not final set");
         uint256 finalResult = q.finalResult;
@@ -365,16 +371,20 @@ contract AttestationOracle is AccessControl {
 
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
-            reputation.updateReputation(user, q.attested[user].record == finalResult && q.attested[user].choice);
-            if(q.attested[user].record == finalResult && q.attested[user].choice) {
+            bool up = q.attested[user].record == finalResult && q.attested[user].choice;
+            reputation.updateReputation(user, up);
+            emit ReputationUpdated(id, user, up);
+            if(up) {
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
 
         for(uint256 i = 0; i < q.juriesAttested.length; i++) {
             address user = q.juriesAttested[i];
-            reputation.updateReputation(user, q.attested[user].record == finalResult && q.attested[user].choice);
-            if(q.attested[user].record == finalResult && q.attested[user].choice) {
+            bool up = q.attested[user].record == finalResult && q.attested[user].choice;
+            reputation.updateReputation(user, up);
+            emit ReputationUpdated(id, user, up);
+            if(up) {
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
@@ -383,10 +393,10 @@ contract AttestationOracle is AccessControl {
     /**
     * Set final result for VERIFYING attestation,
     * only callable by AUTHORITIES
-    * @param id index of attestation
+    * @param id attestation identifier
     * @param choice record selected as real
     */
-    function verifyAttestation(uint256 id, uint256 choice) external onlyRole(AUTHORITY_ROLE) onlyInState(id, AttestationState.VERIFYING) {
+    function verifyAttestation(string calldata id, uint256 choice) external onlyRole(AUTHORITY_ROLE) onlyInState(id, AttestationState.VERIFYING) {
         Attestation storage q = attestations[id];
         if(q.userAttestations[choice].yesCount > 0 || q.juryAttestations[choice].yesCount > 0) {
             q.finalResult = choice;
@@ -395,38 +405,26 @@ contract AttestationOracle is AccessControl {
         }
     }
 
-    /**
-    * Resolve all attestations in one callback,
-    */
-    function resolveAll() external {
-        require(block.timestamp > attestEnd, "too soon");
-        
-        uint256 length = attestations.length;
-        for(uint256 i = 0; i < length; i++) {
-            resolve(i);
-        }
-    }
-
-    function getAttestationInfo(uint256 id) external view returns(
+    function getAttestationInfo(string calldata id) external view returns(
         AttestationState resolved, uint256 finalResult
     ){
         Attestation storage q = attestations[id];
         return (q.resolved, q.finalResult);
     }
 
-    function getWeighedAttestations(uint256 id, uint256 record) external view returns(int256) {
+    function getWeighedAttestations(string calldata id, uint256 record) external view returns(int256) {
         return attestations[id].userAttestations[record].weighedAttestation;
     }
 
-    function getJuryWeighedAttestations(uint256 id, uint256 record) external view returns(int256) {
+    function getJuryWeighedAttestations(string calldata id, uint256 record) external view returns(int256) {
         return attestations[id].juryAttestations[record].weighedAttestation;
     }
 
-    function getOptionAttested(uint256 id) external view returns(uint256, bool) {
+    function getOptionAttested(string calldata id) external view returns(uint256, bool) {
         return (attestations[id].attested[msg.sender].record, attestations[id].attested[msg.sender].choice);
     }
 
-    function viewAttestationResult(uint256 id) external view returns(uint256, uint256) {
+    function viewAttestationResult(string calldata id) external view returns(uint256, uint256) {
         return (attestations[id].mostAttested, attestations[id].mostJuryAttested);
     }
 
