@@ -4,5 +4,9 @@ out = "out"
 libs = ["lib"]
 solc_version = "0.8.24"
 viaIR = true
+ffi = true
+ast = true
+build_info = true
+extra_output = ["storageLayout"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

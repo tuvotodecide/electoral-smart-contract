@@ -9,8 +9,7 @@ import {WiraToken} from "../src/WiraToken.sol";
 
 contract OrackeScript is Script {
   function run() external {
-    uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-    vm.startBroadcast(deployerPrivateKey);
+    vm.startBroadcast();
     
     WiraToken token = new WiraToken(msg.sender, msg.sender, msg.sender);
 
