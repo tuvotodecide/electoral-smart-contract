@@ -71,14 +71,14 @@ contract VerificationFlowTest is Test {
 
         //user creates first attestation
         vm.prank(user);
-        oracle.createAttestation("new-record", participationNft);
+        oracle.createAttestation("1", "new-record", participationNft);
 
         //check user have participation nft
         assertEq(participation.balanceOf(user), 1);
 
         //user creates second attestation
         vm.prank(user);
-        oracle.createAttestation("new-record-2", participationNft);
+        oracle.createAttestation("2", "new-record-2", participationNft);
 
         //check user have still only one participation nft
         assertEq(participation.balanceOf(user), 1);
@@ -101,9 +101,10 @@ contract VerificationFlowTest is Test {
         oracle.register(user, false);
 
         //then user can call createAttestation
+        string memory attestationId = "1";
         vm.startPrank(user);
         //user inits a votation updating their first image
-        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new-record", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "new-record", participationNft);
 
         //check attestation created and user has record and participation nft
         (AttestationOracle.AttestationState resolved,) = oracle.getAttestationInfo(attestationId);
@@ -132,7 +133,7 @@ contract VerificationFlowTest is Test {
         vm.warp(201);
         vm.expectRevert(bytes("Oracle inactive"));
         vm.prank(user);
-        oracle.createAttestation("record 1", participationNft);
+        oracle.createAttestation("1", "record 1", participationNft);
     }
 
     function test_attest_failOn_inactiveOracle() public {
@@ -146,8 +147,9 @@ contract VerificationFlowTest is Test {
         vm.stopPrank();
 
         //user 1 uploads a record
+        string memory id = "1";
         vm.prank(user1);
-        (uint256 id, uint256 recordId) = oracle.createAttestation("record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(id, "record 1", participationNft);
 
         //default active period is 0-200, ser current time to 201
         vm.warp(201);
@@ -165,8 +167,9 @@ contract VerificationFlowTest is Test {
         oracle.register(user1, false);
 
         //user 1 uploads a record
+        string memory id = "1";
         vm.prank(user1);
-        (uint256 id, ) = oracle.createAttestation("record 1", participationNft);
+        oracle.createAttestation(id, "record 1", participationNft);
 
         //default active period is 0-200, current time is 100, test resolve
         vm.expectRevert(bytes("too soon"));
@@ -199,7 +202,7 @@ contract VerificationFlowTest is Test {
 
         vm.expectRevert(bytes("Unauthorized"));
         vm.prank(user1);
-        oracle.createAttestation("record 1", participationNft);
+        oracle.createAttestation("1", "record 1", participationNft);
     }
 
     function test_attest_failOn_notRegisteredUser() public {
@@ -211,8 +214,9 @@ contract VerificationFlowTest is Test {
         oracle.register(user1, false);
 
         //user 1 create attestation
+        string memory id = "1";
         vm.prank(user1);
-        (uint256 id, uint256 recordId) = oracle.createAttestation("record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(id, "record 1", participationNft);
         
         //check user 2 attest
         vm.expectRevert("Unauthorized");
@@ -236,9 +240,12 @@ contract VerificationFlowTest is Test {
         vm.stopPrank();
 
         //user 1 creates two attestations
+        string memory attestationId = "1";
+        string memory attestationId2 = "2";
+        
         vm.startPrank(user1);
-        (uint256 attestationId, uint256 recordId) = oracle.createAttestation("new-record", participationNft);
-        (uint256 attestationId2, uint256 recordId2) = oracle.createAttestation("new-record-2", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "new-record", participationNft);
+        uint256 recordId2 = oracle.createAttestation(attestationId2, "new-record-2", participationNft);
         vm.stopPrank();
 
         //check user 1 have only one participation nft
