@@ -1,7 +1,15 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+/**
+ * Dev_ : Sanchez Brayan
+ * Fecha: jueves 24 julio 07 del 2025
+ * Revisar contrato analizarlo y realizar testing al contrato
+ * posteriormente se analiza si es importante desarrollar mejoras en el cual se el hecho de minimizar el consumo de gas
+ * : implmenetacion : reducir el uso de for o plantear otra logica para desarrollar de otro modo el uso de ciclos, usar contadore en los arreglos!
+ * implementaciones acomplementadas en el uso de condicionales y evitar el uso de ciclos por el gasto de gas
+ * 
+ */
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -9,6 +17,8 @@ import {IMintableERC721} from "./interfaces/IMintableERC721.sol";
 import {IReputation} from "./interfaces/IReputation.sol";
 import {IWiraToken} from "./interfaces/IWiraToken.sol";
 
+
+// struct revisar  ...
 contract AttestationOracle is AccessControl {
     using SafeERC20 for IWiraToken;
 
@@ -25,30 +35,54 @@ contract AttestationOracle is AccessControl {
         VERIFYING,
         CLOSED
     }
-
+    // divisiones en cada apartado
+    // primera estructa 
     struct AttestationChoice {
         uint256 record;
         bool choice;
     }
 
+    // segunda estructura ....
     struct RecordAttestation {
         uint256 yesCount;
         uint256 noesCount;
         int256 weighedAttestation;
     }
-
+    // tercera estructura | revisar
     struct Attestation {
+        // se cambio los arreglos a mappings y no realizar un get conjunto 
+        mapping(uint256 => RecordAttestation) juryAttestations; //attestation of juries for record
+        mapping(uint256 => RecordAttestation) userAttestations; //attestation of users for record    
+        uint256 recordCount;
+        uint256 firstRecord;
+        // -- add new logic aplication mapping <- arrays
+        mapping(address => bool) userParticipated;
+        mapping(address => bool) juryParticipated;
+        uint256 userCount;
+        uint256 juryCount;
+
+        uint256 cumulatedStake; //cumulated stake to redistrubute
+        uint256 mostAttested; //record most attested by users
+        uint256 mostJuryAttested; //record most attested by juries
+        uint256 finalResult; //record selected as real on resolve attestation
+        mapping(uint256 => bool) recordExists;
         uint256[] records;
-        uint256 cumulatedStake;                                         //cumulated stake to redistrubute
-        mapping(uint256 => RecordAttestation) userAttestations;        //attestation of users for record
-        mapping(uint256 => RecordAttestation) juryAttestations;         //attestation of juries for record
-        uint256 mostAttested;                                           //record most attested by users
-        uint256 mostJuryAttested;                                       //record most attested by juries
-        uint256 finalResult;                                            //record selected as real on resolve attestation
-        address[] usersAttested;                                        //array of users attested (not public)
-        address[] juriesAttested;                                       //array of juries attested (not public)
-        mapping(address => AttestationChoice) attested;                 //attestation of each user/jury (not public)
-        AttestationState resolved;                                      //state of attestation
+        // arreglos
+        address[] usersAttested; //array of users attested (not public)
+        address[] juriesAttested; //array of juries attested (not public)
+        mapping(address => AttestationChoice) attested; //attestation of each user/jury (not public)
+        AttestationState resolved; //state of attestation
+
+        uint256 maxUserWeighedRecord;     // Record con mayor peso de usuarios
+        int256 maxUserWeighedValue;       // Value máx of peso de usuarios
+        uint256 maxJuryWeighedRecord;     // Record con mayor peso de jurados
+        int256 maxJuryWeighedValue;       // Valor máximo de peso de jurados
+        // creacion del estado de la distribucion
+        mapping(address => bool) hasClaimedReward;
+        bool distributionEnabled;
+        uint256 rewardPerParticipant;
+
+
     }
 
     IMintableERC721 public immutable attestationRecord;
@@ -56,8 +90,18 @@ contract AttestationOracle is AccessControl {
     IReputation public immutable reputation;
     IWiraToken public immutable stakeToken;
     uint256 public stake;
+<<<<<<< HEAD
     uint256 public totalAttestations;
     mapping(string => Attestation) private attestations;
+=======
+    uint256 public attestationWindow = 2 hours; // time max 
+    uint256 public totalAttestations;
+
+
+    // convertido a mapping 
+    /// uint256 Attestation  private attestations;
+    mapping(uint256 => Attestation) private attestations;
+>>>>>>> origin/ronaldo-smart
 
     event RegisterRequested(address user, string uri);
     event AttestationCreated(string id, uint256 recordId);
@@ -98,23 +142,37 @@ contract AttestationOracle is AccessControl {
         _;
     }
 
+    // function 1
     //External call by user to init register
+<<<<<<< HEAD
     function requestRegister(string calldata uri) external onlyActive {
         if(!hasRole(USER_ROLE, msg.sender) && !hasRole(JURY_ROLE, msg.sender)) {
+=======
+    function requestRegister(string memory uri) external onlyActive {
+        if (!hasRole(USER_ROLE, msg.sender) && !hasRole(JURY_ROLE, msg.sender)) {
+>>>>>>> origin/ronaldo-smart
             emit RegisterRequested(msg.sender, uri);
         }
     }
-
+    // 2
     //Private call to finish user registering and init reputation
+
+    // funcion 2 registro usuario/role
     function register(address user, bool jury) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _grantRole(jury ? JURY_ROLE:USER_ROLE, user);
+        _grantRole(jury ? JURY_ROLE : USER_ROLE, user);
         reputation.initReputationOf(user);
     }
 
+    
     /**
      * make a stake deposit of an attestation to redistribute on resolve
      */
+<<<<<<< HEAD
     function _depositStake(string calldata id) private {
+=======
+    // funcion staking 
+    function _depositStake(uint256 id) private {
+>>>>>>> origin/ronaldo-smart
         stakeToken.mint(address(this), stake);
         attestations[id].cumulatedStake += stake;
     }
@@ -123,6 +181,7 @@ contract AttestationOracle is AccessControl {
      * Mint a participation NFT if user doesn't have one yet
      * @param uri a string of IPFS json containing participation image and data
      */
+<<<<<<< HEAD
     function _mintParticipationNft(string calldata uri) private {
         if(participation.balanceOf(msg.sender) == 0) {
             uint256 nftId = participation.safeMint(msg.sender, uri);
@@ -137,6 +196,12 @@ contract AttestationOracle is AccessControl {
      * @param participationUri a string of IPFS json containing participation image and data if needed
      */
     function createAttestation(string calldata id, string calldata uri, string calldata participationUri)
+=======
+    // 4
+
+
+    function createAttestation(string memory uri)
+>>>>>>> origin/ronaldo-smart
         external
         onlyVerified
         onlyActive
@@ -147,18 +212,55 @@ contract AttestationOracle is AccessControl {
 
         //mint new NFT for record
         recordId = attestationRecord.safeMint(msg.sender, uri);
+<<<<<<< HEAD
         q.records.push(recordId);
+=======
+        // se incrementa
+        id = totalAttestations++;
+        //init new attestation
+        // Attestation storage q = attestations.push();
+        Attestation storage q = attestations[id];
+        q.recordExists[recordId] = true;
+        q.recordCount = 1;
+        q.firstRecord = recordId;
+
+        //q.records.push(recordId);
+>>>>>>> origin/ronaldo-smart
         q.attested[msg.sender] = AttestationChoice(recordId, true);
 
         //add record with user vote
-        if(hasRole(USER_ROLE, msg.sender)) {
+        //if (hasRole(USER_ROLE, msg.sender)) {
+        bool isJury = hasRole(JURY_ROLE, msg.sender);
+        // implicita var userReputation
+        //uint256 userReputation = uint256(reputation.getReputationOf(msg.sender));
+        int256 userReputation = int256(reputation.getReputationOf(msg.sender));
+
+        if (isJury) {
+            q.juryParticipated[msg.sender] = true;
+            q.juryCount = 1;
+            q.juryAttestations[recordId] = RecordAttestation(1, 0, userReputation);
+            
+        } else {
+            q.userParticipated[msg.sender] = true;
+            q.userCount = 1;
+            q.userAttestations[recordId] = RecordAttestation(1, 0, userReputation);
+            
+        }
+        
+        /*if (!isJury) {
             q.usersAttested.push(msg.sender);
-            q.userAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
-        }else{
+            q.userAttestations[recordId] = RecordAttestation(1, 0, //int256(reputation.getReputationOf(msg.sender)));
+        } else {
             q.juriesAttested.push(msg.sender);
             q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
+<<<<<<< HEAD
         }
         totalAttestations++;
+=======
+        }*/
+        //id = totalAttestations++;
+
+>>>>>>> origin/ronaldo-smart
         //deposit first stake
         _depositStake(id);
         _mintParticipationNft(participationUri);
@@ -173,46 +275,61 @@ contract AttestationOracle is AccessControl {
      * @param uri IPFS json of new record to attest as real, if uploaded, record and choice are ignored
      * @param participationUri a string of IPFS json containing participation image and data if needed
      */
+<<<<<<< HEAD
     function attest(string calldata id, uint256 record, bool choice, string calldata uri, string calldata participationUri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
+=======
+    // 5
+    function attest(uint256 id, uint256 record, bool choice, string memory uri)
+        external
+        onlyVerified
+        onlyActive
+        onlyInState(id, AttestationState.OPEN)
+    {
+>>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
 
         bool isJury = hasRole(JURY_ROLE, msg.sender);
 
         //add new record if uri is uploaded
-        if(bytes(uri).length > 0) {
+        if (bytes(uri).length > 0) {
             uint256 recordId = attestationRecord.safeMint(msg.sender, uri);
             q.records.push(recordId);
             q.attested[msg.sender] = AttestationChoice(recordId, true);
-            if(!isJury) {
+            if (!isJury) {
                 q.usersAttested.push(msg.sender);
                 q.userAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
-            }else{
+            } else {
                 q.juriesAttested.push(msg.sender);
                 q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
             }
             _depositStake(id);
+<<<<<<< HEAD
             _mintParticipationNft(participationUri);
             emit Attested(recordId);
             return recordId;
         //check that record exists and register user choice
+=======
+            emit Attested();
+            //check that record exists and register user choice
+>>>>>>> origin/ronaldo-smart
         } else if (q.userAttestations[record].yesCount > 0 || q.juryAttestations[record].yesCount > 0) {
-            if(!isJury) {
+            if (!isJury) {
                 q.usersAttested.push(msg.sender);
-                if(choice) {
-                    q.userAttestations[record].yesCount ++;
+                if (choice) {
+                    q.userAttestations[record].yesCount++;
                     q.userAttestations[record].weighedAttestation += int256(reputation.getReputationOf(msg.sender));
-                }else {
-                    q.userAttestations[record].noesCount ++;
+                } else {
+                    q.userAttestations[record].noesCount++;
                     q.userAttestations[record].weighedAttestation -= int256(reputation.getReputationOf(msg.sender));
                 }
-            }else{
+            } else {
                 q.juriesAttested.push(msg.sender);
-                if(choice) {
-                    q.juryAttestations[record].yesCount ++;
+                if (choice) {
+                    q.juryAttestations[record].yesCount++;
                     q.juryAttestations[record].weighedAttestation += int256(reputation.getReputationOf(msg.sender));
-                }else {
-                    q.juryAttestations[record].noesCount ++;
+                } else {
+                    q.juryAttestations[record].noesCount++;
                     q.juryAttestations[record].weighedAttestation -= int256(reputation.getReputationOf(msg.sender));
                 }
             }
@@ -225,11 +342,39 @@ contract AttestationOracle is AccessControl {
         return 0;
     }
 
+
+
+
+    // despues de los atestiguamientos
+    function _upprecalcMostAttested(uint256 id, uint256 record, bool isJury, int256 newWeight) private {
+    Attestation storage q = attestations[id];
+    
+    if (isJury) {
+        if (newWeight > q.maxJuryWeighedValue) {
+            q.maxJuryWeighedValue = newWeight;
+            q.maxJuryWeighedRecord = record;
+            q.mostJuryAttested = record;
+        }
+    } else {
+        if (newWeight > q.maxUserWeighedValue) {
+            q.maxUserWeighedValue = newWeight;
+            q.maxUserWeighedRecord = record;
+            q.mostAttested = record;
+        }
+    }
+}
+
+
     /**
      * Resolve an attestation after time defined on attestationWindow
      * @param id attestation identifier
      */
+<<<<<<< HEAD
     function resolve(string calldata id) public onlyInState(id, AttestationState.OPEN) {
+=======
+    //6
+    function resolve(uint256 id) external onlyInState(id, AttestationState.OPEN) {
+>>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         require(block.timestamp > attestEnd, "too soon");
 
@@ -239,16 +384,82 @@ contract AttestationOracle is AccessControl {
             return;
         }
 
+
+
+/*
+      // Gas-optimized approach: Use pre-tracked mostAttested value
+        // The mostAttested should be updated during each attest() call
+        uint256 mostAttestations = q.userAttestations[q.mostAttested].weighedAttestation;
+        
+        // No loops needed - mostAttested is maintained during attestation process
+        // If no mostAttested is set, use the first record
+        if (q.mostAttested == 0) {
+            q.mostAttested = q.firstRecord;
+            mostAttestations = q.userAttestations[q.firstRecord].weighedAttestation;
+        }*/
+        //Get most attested record by users
+
+        // each
+        /*int256 mostAttestations = q.userAttestations[q.mostAttested].weighedAttestation;
+        //uint256 i = 0;
+
+        if (q.mostAttested == 0) {
+            // If no mostAttested is set, use the first record
+            q.mostAttested = q.firstRecord;
+            mostAttestations = q.userAttestations[q.firstRecord].weighedAttestation;
+
+        }*/
+
         //Get most attested record by users
         int256 mostAttestations;
-        for(uint256 i = 0; i < q.records.length; i++) {
+
+        for (uint256 i = 0 ; i < q.records.length; i++) {
             int256 attestationCount = q.userAttestations[q.records[i]].weighedAttestation;
-            if(attestationCount > mostAttestations) {
+            if (attestationCount > mostAttestations) {
                 mostAttestations = attestationCount;
                 q.mostAttested = q.records[i];
             }
         }
+        //int256 mostAttestations = q.maxUserWeighedValue;
+        
+        //int256 mostJuryAttestations = q.maxJuryWeighedValue;
 
+
+        /*if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
+            if (mostAttestations > 0 && q.userAttestations[q.mostAttested].yesCount > 2) {
+                q.finalResult = q.mostAttested;
+                _setReputation(id);
+                q.resolved = AttestationState.CONSENSUAL;
+                emit Resolved(id, q.resolved);
+            } else {
+                q.resolved = AttestationState.VERIFYING;
+                emit InitVerification(id);
+            }
+        } // ya no se almacena q.records
+        /*else if (q.usersAttested.length == 0 && q.juriesAttested.length > 0) {
+            if (mostJuryAttestations > 0) {
+                q.finalResult = q.mostJuryAttested;
+                _setReputation(id);
+                q.resolved = AttestationState.CONSENSUAL;
+                emit Resolved(id, q.resolved);
+            } else {
+                q.resolved = AttestationState.VERIFYING;
+                emit InitVerification(id);
+            }
+        } else if (q.mostAttested == q.mostJuryAttested) {
+            if (mostAttestations > 0 && mostJuryAttestations > 0) {
+                q.finalResult = q.mostAttested;
+                _setReputation(id);
+                q.resolved = AttestationState.CONSENSUAL;
+                emit Resolved(id, q.resolved);
+            } else {
+                q.resolved = AttestationState.VERIFYING;
+                emit InitVerification(id);
+            }
+        } else {
+            q.resolved = AttestationState.VERIFYING;
+            emit InitVerification(id);
+        }*///revisar
         //Get most attested record by juries
         int256 mostJuryAttestations;
         for(uint256 i = 0; i < q.records.length; i++) {
@@ -259,9 +470,15 @@ contract AttestationOracle is AccessControl {
             }
         }
 
+
         //only users voted
+<<<<<<< HEAD
         if(q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
             if(mostAttestations > 0 && q.userAttestations[q.mostAttested].yesCount > 2) {
+=======
+        if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
+            if (mostAttestations > 0 && q.userAttestations[q.finalResult].yesCount > 2) {
+>>>>>>> origin/ronaldo-smart
                 q.finalResult = q.mostAttested;
                 _setReputation(id);
                 q.resolved = AttestationState.CONSENSUAL;
@@ -272,8 +489,8 @@ contract AttestationOracle is AccessControl {
             }
         }
         //only juries voted
-        else if(q.usersAttested.length == 0 && q.juriesAttested.length > 0) {
-            if(mostJuryAttestations > 0) {
+        else if (q.usersAttested.length == 0 && q.juriesAttested.length > 0) {
+            if (mostJuryAttestations > 0) {
                 q.finalResult = q.mostJuryAttested;
                 _setReputation(id);
                 q.resolved = AttestationState.CONSENSUAL;
@@ -284,8 +501,8 @@ contract AttestationOracle is AccessControl {
             }
         }
         //most users match most juries
-        else if(q.mostAttested == q.mostJuryAttested) {
-            if(mostAttestations > 0 && mostJuryAttestations > 0) {
+        else if (q.mostAttested == q.mostJuryAttested) {
+            if (mostAttestations > 0 && mostJuryAttestations > 0) {
                 q.finalResult = q.mostAttested;
                 _setReputation(id);
                 q.resolved = AttestationState.CONSENSUAL;
@@ -301,6 +518,7 @@ contract AttestationOracle is AccessControl {
             emit InitVerification(id);
         }
     }
+   
 
     /**
      * Check unanimity, if all users and juries voted unique record as real,
@@ -308,129 +526,255 @@ contract AttestationOracle is AccessControl {
      * Also sets users/juries reputation.
      * @param id attestation identifier
      */
+<<<<<<< HEAD
     function _checkUnanimity(string calldata id) private {
+=======
+    //
+    function _checkUnanimity(uint256 id) private {
+>>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
-        uint256 record = q.records[0];
 
+<<<<<<< HEAD
         if(
             !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0) &&
             !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2) &&
             !(q.usersAttested.length == 0 && q.juryAttestations[record].weighedAttestation > 0)
         ){
+=======
+        // q.records[0] -> q.firts.record;
+        uint256 record = q.records[0];
+        //uint256 record = q.firstRecord;
+        
+
+        if (
+            !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0)
+                && !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2)
+        ) {
+>>>>>>> origin/ronaldo-smart
             q.resolved = AttestationState.VERIFYING;
             emit InitVerification(id);
             return;
         }
 
         q.finalResult = q.records[0];
-        uint256 distributionAmount = q.cumulatedStake / (
-            q.userAttestations[q.finalResult].yesCount +
-            q.juryAttestations[q.finalResult].yesCount
-        );
         
-        for(uint256 i = 0; i < q.usersAttested.length; i++) {
+        uint256 distributionAmount =
+            q.cumulatedStake / (q.userAttestations[q.finalResult].yesCount + q.juryAttestations[q.finalResult].yesCount);
+        
+        
+        /*q.finalResult = record;
+        q.distributionEnabled = true;
+        q.rewardPerParticipant = q.cumulatedStake / (q.userAttestations[record].yesCount + q.juryAttestations[record].yesCount);*/
+
+
+        // uint256 distributionAmount = q.cumulatedStake / (q.userAttestations[record].yesCount + q.juryAttestations[record].yesCount);
+
+        for (uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
+<<<<<<< HEAD
             bool up = q.attested[user].choice;
             reputation.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
+=======
+            reputation.updateReputation(user, q.attested[user].choice);
+            if (q.attested[user].choice) {
+>>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
 
-        for(uint256 i = 0; i < q.juriesAttested.length; i++) {
+        /*if (q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
+        q.resolved = AttestationState.CONSENSUAL;
+        } else {
+            q.resolved = AttestationState.CLOSED;
+        }*/
+
+
+        for (uint256 i = 0; i < q.juriesAttested.length; i++) {
             address jury = q.juriesAttested[i];
+<<<<<<< HEAD
             bool up = q.attested[jury].choice;
             reputation.updateReputation(jury, up);
             emit ReputationUpdated(id, jury, up);
             if(up) {
+=======
+            reputation.updateReputation(jury, q.attested[jury].choice);
+            if (q.attested[jury].choice) {
+>>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(jury, distributionAmount);
             }
         }
 
-        if(q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
+        if (q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
             q.resolved = AttestationState.CONSENSUAL;
         } else {
             q.resolved = AttestationState.CLOSED;
         }
     }
+    
+
+   /*function distributeUserRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
+    Attestation storage q = attestations[id];
+    require(q.distributionEnabled, "Distribution not enabled");
+    require(endIndex <= q.usersAttested.length, "Index out of bounds");
+    
+    for (uint256 i = startIndex; i < endIndex; i++) {
+        address user = q.usersAttested[i];
+        if (!q.hasClaimedReward[user] && q.attested[user].choice) {
+            q.hasClaimedReward[user] = true;
+            stakeToken.safeTransfer(user, q.rewardPerParticipant);
+            reputation.updateReputation(user, true);
+        }
+    }
+}*/
+
+    /*
+    function distributeJuryRewards(uint256 id, uint256 startIndex, uint256 endIndex) external {
+        Attestation storage q = attestations[id];
+        require(q.distributionEnabled, "Distribution not enabled");
+        require(endIndex <= q.juriesAttested.length, "Index out of bounds");
+        
+        for (uint256 i = startIndex; i < endIndex; i++) {
+            address jury = q.juriesAttested[i];
+            if (!q.hasClaimedReward[jury] && q.attested[jury].choice) {
+                q.hasClaimedReward[jury] = true;
+                stakeToken.safeTransfer(jury, q.rewardPerParticipant);
+                reputation.updateReputation(jury, true);
+            }
+        }
+    }*/
+
+
 
     /**
      * Update users/juries reputation given an attestation with a final result
      * @param id attestation identifier
      */
+<<<<<<< HEAD
     function _setReputation(string calldata id) internal {
+=======
+    // 8
+    function _setReputation(uint256 id) internal {
+>>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         require(q.finalResult != 0, "Not final set");
         uint256 finalResult = q.finalResult;
-        
-        uint256 distributionAmount = q.cumulatedStake / (
-            q.userAttestations[finalResult].yesCount +
-            q.juryAttestations[finalResult].yesCount
-        );
 
-        for(uint256 i = 0; i < q.usersAttested.length; i++) {
+        uint256 distributionAmount =
+            q.cumulatedStake / (q.userAttestations[finalResult].yesCount + q.juryAttestations[finalResult].yesCount);
+
+        for (uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
+<<<<<<< HEAD
             bool up = q.attested[user].record == finalResult && q.attested[user].choice;
             reputation.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
+=======
+            reputation.updateReputation(user, q.attested[user].record == finalResult && q.attested[user].choice);
+            if (q.attested[user].record == finalResult && q.attested[user].choice) {
+>>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
 
-        for(uint256 i = 0; i < q.juriesAttested.length; i++) {
+        for (uint256 i = 0; i < q.juriesAttested.length; i++) {
             address user = q.juriesAttested[i];
+<<<<<<< HEAD
             bool up = q.attested[user].record == finalResult && q.attested[user].choice;
             reputation.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
+=======
+            reputation.updateReputation(user, q.attested[user].record == finalResult && q.attested[user].choice);
+            if (q.attested[user].record == finalResult && q.attested[user].choice) {
+>>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
     }
 
     /**
+<<<<<<< HEAD
     * Set final result for VERIFYING attestation,
     * only callable by AUTHORITIES
     * @param id attestation identifier
     * @param choice record selected as real
     */
     function verifyAttestation(string calldata id, uint256 choice) external onlyRole(AUTHORITY_ROLE) onlyInState(id, AttestationState.VERIFYING) {
+=======
+     * Set final result for VERIFYING attestation,
+     * only callable by AUTHORITIES
+     * @param id index of attestation
+     * @param choice record selected as real
+     */
+    // 9
+    function verifyAttestation(uint256 id, uint256 choice)
+        external
+        onlyRole(AUTHORITY_ROLE)
+        onlyInState(id, AttestationState.VERIFYING)
+    {
+>>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
-        if(q.userAttestations[choice].yesCount > 0 || q.juryAttestations[choice].yesCount > 0) {
+        if (q.userAttestations[choice].yesCount > 0 || q.juryAttestations[choice].yesCount > 0) {
             q.finalResult = choice;
             _setReputation(id);
             q.resolved = AttestationState.CLOSED;
         }
     }
 
+<<<<<<< HEAD
     function getAttestationInfo(string calldata id) external view returns(
         AttestationState resolved, uint256 finalResult
     ){
+=======
+    // 10
+    function getAttestationInfo(uint256 id) external view returns (AttestationState resolved, uint256 finalResult) {
+>>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         return (q.resolved, q.finalResult);
     }
 
+<<<<<<< HEAD
     function getWeighedAttestations(string calldata id, uint256 record) external view returns(int256) {
+=======
+    // 11
+    function getWeighedAttestations(uint256 id, uint256 record) external view returns (int256) {
+>>>>>>> origin/ronaldo-smart
         return attestations[id].userAttestations[record].weighedAttestation;
     }
+    // 12
 
+<<<<<<< HEAD
     function getJuryWeighedAttestations(string calldata id, uint256 record) external view returns(int256) {
+=======
+    function getJuryWeighedAttestations(uint256 id, uint256 record) external view returns (int256) {
+>>>>>>> origin/ronaldo-smart
         return attestations[id].juryAttestations[record].weighedAttestation;
     }
+    // 13
 
+<<<<<<< HEAD
     function getOptionAttested(string calldata id) external view returns(uint256, bool) {
+=======
+    function getOptionAttested(uint256 id) external view returns (uint256, bool) {
+>>>>>>> origin/ronaldo-smart
         return (attestations[id].attested[msg.sender].record, attestations[id].attested[msg.sender].choice);
     }
+    // 14
 
+<<<<<<< HEAD
     function viewAttestationResult(string calldata id) external view returns(uint256, uint256) {
+=======
+    function viewAttestationResult(uint256 id) external view returns (uint256, uint256) {
+>>>>>>> origin/ronaldo-smart
         return (attestations[id].mostAttested, attestations[id].mostJuryAttested);
     }
+    // 15
 
     function setActiveTime(uint256 start, uint256 end) external onlyRole(DEFAULT_ADMIN_ROLE) {
         attestStart = start;
         attestEnd = end;
     }
 }
-
