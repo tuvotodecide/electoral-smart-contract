@@ -5,41 +5,110 @@ import {Test} from "lib/forge-std/src/Test.sol";
 import {console} from "lib/forge-std/src/console.sol";
 import {AttestationOracle} from "../../src/AttestationOracle.sol";
 
-// Mocks para las interfaces
+// Mocks mejorados para las interfaces
 contract MockAttestationRecord {
     uint256 private _tokenIdCounter;
+    mapping(address => bool) public hasRole_;
+    bytes32 public constant AUTHORIZED_ROLE = keccak256("AUTHORIZED_ROLE");
 
     function safeMint(address, /*to*/ string memory /*uri*/ ) external returns (uint256) {
         return ++_tokenIdCounter;
+    }
+
+    function grantRole(bytes32, address account) external {
+        hasRole_[account] = true;
+    }
+
+    function hasRole(bytes32, address account) external view returns (bool) {
+        return hasRole_[account];
+    }
+
+    /*function AUTHORIZED_ROLE() external pure returns (bytes32) {
+        return AUTHORIZED_ROLE;
+    }*/
+
+    function totalSupply() external view returns (uint256) {
+        return _tokenIdCounter;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
+    }
+}
+
+contract MockParticipation {
+    uint256 private _tokenIdCounter;
+    mapping(address => bool) public hasRole_;
+    bytes32 public constant AUTHORIZED_ROLE = keccak256("AUTHORIZED_ROLE");
+
+    function safeMint(address, /*to*/ string memory /*uri*/ ) external returns (uint256) {
+        return ++_tokenIdCounter;
+    }
+
+    function grantRole(bytes32, address account) external {
+        hasRole_[account] = true;
+    }
+
+    function hasRole(bytes32, address account) external view returns (bool) {
+        return hasRole_[account];
+    }
+
+    /*function AUTHORIZED_ROLE() external pure returns (bytes32) {
+        return AUTHORIZED_ROLE;
+    }*/
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 0;
     }
 }
 
 contract MockReputation {
     mapping(address => uint256) private _reputation;
     mapping(address => bool) private _initialized;
+    mapping(address => bool) public hasRole_;
+    bytes32 public constant AUTHORIZED_ROLE = keccak256("AUTHORIZED_ROLE");
 
     function initReputationOf(address user) external {
-        _reputation[user] = 100; // Reputación inicial
+        _reputation[user] = 1; // Reputación inicial estándar
         _initialized[user] = true;
     }
 
     function getReputationOf(address user) external view returns (uint256) {
-        return _reputation[user];
+        return _initialized[user] ? _reputation[user] : 1;
     }
 
     function updateReputation(address user, bool up) external {
+        if (!_initialized[user]) {
+            _reputation[user] = 1;
+            _initialized[user] = true;
+        }
+        
         if (up) {
-            _reputation[user] += 10;
+            _reputation[user] += 1;
         } else {
-            if (_reputation[user] >= 10) {
-                _reputation[user] -= 10;
+            if (_reputation[user] > 1) {
+                _reputation[user] -= 1;
             }
         }
     }
+
+    function grantRole(bytes32, address account) external {
+        hasRole_[account] = true;
+    }
+
+    function hasRole(bytes32, address account) external view returns (bool) {
+        return hasRole_[account];
+    }
+
+    /*function AUTHORIZED_ROLE() external pure returns (bytes32) {
+        return AUTHORIZED_ROLE;
+    }*/
 }
 
 contract MockWiraToken {
     mapping(address => uint256) private _balances;
+    mapping(address => bool) public hasRole_;
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
     uint256 private _totalSupply;
 
     function mint(address to, uint256 amount) external {
@@ -71,23 +140,27 @@ contract MockWiraToken {
         return _balances[account];
     }
 
-    function allowance(address, /*owner*/ address /*spender*/ ) external pure returns (uint256) {
-        return type(uint256).max;
+    function grantRole(bytes32, address account) external {
+        hasRole_[account] = true;
     }
 
-    function approve(address, /*spender*/ uint256 /*amount*/ ) external pure returns (bool) {
-        return true;
+    function hasRole(bytes32, address account) external view returns (bool) {
+        return hasRole_[account];
     }
+
+    /*function MINTER_ROLE() external pure returns (bytes32) {
+        return MINTER_ROLE;
+    }*/
 }
 
 contract AttestationOracleTestMin is Test {
     AttestationOracle public oracle;
     MockAttestationRecord public mockRecord;
+    MockParticipation public mockParticipation;
     MockReputation public mockReputation;
     MockWiraToken public mockToken;
-    // cambiar roles
 
-    address public admin; // Se asigna en setUp()
+    address public admin;
     address public user1 = address(0x2);
     address public user2 = address(0x3);
     address public jury1 = address(0x4);
@@ -95,172 +168,249 @@ contract AttestationOracleTestMin is Test {
 
     uint256 public constant STAKE_AMOUNT = 100 ether;
 
-    function setUp() public {
-        // Configurar las direcciones
-        admin = address(this); // El contrato de test es el admin
+    // Events para testing
+    event RegisterRequested(address user, string uri);
+    event AttestationCreated(string id, uint256 recordId);
+    event Attested(uint256 recordId);
+    event Resolved(string id, AttestationOracle.AttestationState closeState);
 
-        // Configurar los mocks
+    function setUp() public {
+        admin = address(this);
+
+        // Crear mocks
         mockRecord = new MockAttestationRecord();
+        mockParticipation = new MockParticipation();
         mockReputation = new MockReputation();
         mockToken = new MockWiraToken();
 
-        // Desplegar el contrato principal
-        oracle =
-            new AttestationOracle(admin, address(mockRecord), address(mockReputation), address(mockToken), STAKE_AMOUNT);
+        // Desplegar oracle con 6 parámetros
+        oracle = new AttestationOracle(
+            admin,
+            address(mockRecord),
+            address(mockParticipation), // Parámetro que faltaba
+            address(mockReputation),
+            address(mockToken),
+            STAKE_AMOUNT
+        );
 
-        // Configurar tiempos activos (ahora + 1 hora hasta ahora + 3 horas)
-        oracle.setActiveTime(block.timestamp + 1 hours, block.timestamp + 3 hours);
+        // Configurar permisos
+        mockRecord.grantRole(mockRecord.AUTHORIZED_ROLE(), address(oracle));
+        mockParticipation.grantRole(mockParticipation.AUTHORIZED_ROLE(), address(oracle));
+        mockReputation.grantRole(mockReputation.AUTHORIZED_ROLE(), address(oracle));
+        mockToken.grantRole(mockToken.MINTER_ROLE(), address(oracle));
+
+        // Configurar tiempos activos
+        oracle.setActiveTime(block.timestamp, block.timestamp + 3600);
 
         // Registrar usuarios
-        oracle.register(user1, false); // Usuario normal
-        oracle.register(user2, false); // Usuario normal
-        oracle.register(jury1, true); // Jurado
-
-        // Otorgar rol de autoridad
+        oracle.register(user1, false);
+        oracle.register(user2, false);
+        oracle.register(jury1, true);
         oracle.grantRole(oracle.AUTHORITY_ROLE(), authority);
-
-        // Avanzar el tiempo para que el oráculo esté activo
-        vm.warp(block.timestamp + 1 hours + 1);
     }
 
-    // TEST 1: Verificar que el constructor inicializa correctamente
     function test_Constructor() public view {
         assertEq(oracle.stake(), STAKE_AMOUNT);
-        assertEq(oracle.totalAttestations(), 0);
         assertTrue(oracle.hasRole(oracle.DEFAULT_ADMIN_ROLE(), admin));
-        console.log("stake: ", oracle.stake());
-        console.log("totalAttestations: ", oracle.totalAttestations());
+        console.log("Stake configurado:", oracle.stake());
     }
 
-    //Verificar que requestRegister funciona correctamente
     function test_RequestRegister() public {
         address newUser = address(0x6);
 
         vm.expectEmit(true, false, false, true);
-        emit AttestationOracle.RegisterRequested(newUser, "test-uri");
+        emit RegisterRequested(newUser, "QmTestHash123");
 
         vm.prank(newUser);
-        oracle.requestRegister("test-uri");
-        console.log("Request register: ", newUser);
+        oracle.requestRegister("QmTestHash123");
+        console.log("Solicitud de registro para:", newUser);
     }
 
-    //Verificar que register funciona correctamente
     function test_Register() public {
         address newUser = address(0x7);
 
-        vm.prank(admin);
         oracle.register(newUser, false);
 
         assertTrue(oracle.hasRole(oracle.USER_ROLE(), newUser));
         assertFalse(oracle.hasRole(oracle.JURY_ROLE(), newUser));
+        console.log("Usuario registrado:", newUser);
     }
 
-    //  why Verifyng  createAttestation started correct
     function test_CreateAttestation() public {
-        string memory uri = "ipfs://test-hash";
-        console.log("Creating attestation with URI:", uri);
-        vm.expectEmit(true, true, false, true);
-        emit AttestationOracle.AttestationCreated(0, 1);
-        vm.prank(user1);
-        (uint256 attestationId, uint256 recordId) = oracle.createAttestation(uri);
+        vm.expectEmit(false, false, false, true);
+        emit AttestationCreated("fraud_case_001", 1);
 
-        assertEq(attestationId, 0);
+        vm.prank(user1);
+        uint256 recordId = oracle.createAttestation(
+            "fraud_case_001", 
+            "QmEvidenceHash", 
+            "QmParticipationHash"
+        );
+
         assertEq(recordId, 1);
-        assertEq(oracle.totalAttestations(), 1);
-        console.log("Attestation created ID:", attestationId);
-        console.log("Attestation Record ID:", recordId);
+        console.log("Atestiguacion creada con record ID:", recordId);
 
-        // Verificar el estado de la attestación
-        (AttestationOracle.AttestationState state, uint256 finalResult) = oracle.getAttestationInfo(0);
-        assertEq(uint256(state), uint256(AttestationOracle.AttestationState.OPEN));
+        // Verificar estado
+        (AttestationOracle.AttestationState state, uint256 finalResult) = 
+            oracle.getAttestationInfo("fraud_case_001");
+        assertEq(uint256(state), 0); // OPEN
         assertEq(finalResult, 0);
-        //console.log("Attestation State:", state);
-        console.log("Attestation result:", finalResult);
     }
 
-    // Verificar que attest funciona correctamente
     function test_Attest() public {
-        // Primero crear una attestación
+        // Crear atestiguación
         vm.prank(user1);
-        (uint256 attestationId,) = oracle.createAttestation("ipfs://test-hash");
+        uint256 recordId = oracle.createAttestation(
+            "vote_buying_case", 
+            "QmEvidence1", 
+            "QmParticipation1"
+        );
 
-        // Usuario 2 vota en la misma attestación
-        vm.expectEmit();
-        emit AttestationOracle.Attested();
-        console.log("Attestation ID:", attestationId);
-        vm.prank(user2);
-        oracle.attest(attestationId, 1, true, "");
+        // User2 vota a favor
+        vm.expectEmit(false, false, false, false);
+        emit Attested(recordId);
 
-        // Verificar que el usuario votó
         vm.prank(user2);
-        (uint256 record, bool choice) = oracle.getOptionAttested(attestationId);
-        assertEq(record, 1);
+        uint256 result = oracle.attest(
+            "vote_buying_case", 
+            recordId, 
+            true, 
+            "", 
+            "QmParticipation2"
+        );
+
+        assertEq(result, recordId);
+
+        // Verificar voto
+        vm.prank(user2);
+        (uint256 votedRecord, bool choice) = oracle.getOptionAttested("vote_buying_case");
+        assertEq(votedRecord, recordId);
         assertTrue(choice);
-        console.log("Attestation User1:", user1, " vote Record:", record);
-        console.log("Attestation User2:", user2, "Vote:", choice);
+        console.log("Usr2 voto por record:", votedRecord, "con eleccion:", choice);
     }
 
-    // TEST 6: Verificar que resolve funciona correctamente
     function test_Resolve() public {
-        // Crear attestación y obtener votos
+        // Crear atestiguación con consenso
         vm.prank(user1);
-        (uint256 attestationId,) = oracle.createAttestation("ipfs://test-hash");
+        uint256 recordId = oracle.createAttestation(
+            "consensus_case", 
+            "QmStrongEvidence", 
+            "QmParticipation1"
+        );
 
+        // Múltiples votos a favor
         vm.prank(user2);
-        oracle.attest(attestationId, 1, true, "");
+        oracle.attest("consensus_case", recordId, true, "", "QmParticipation2");
 
         vm.prank(jury1);
-        oracle.attest(attestationId, 1, true, "");
+        oracle.attest("consensus_case", recordId, true, "", "QmParticipation3");
 
-        // Avanzar tiempo pasado el final de attestación
-        vm.warp(block.timestamp + 3 hours);
+        // Avanzar tiempo y resolver
+        vm.warp(block.timestamp + 3601);
 
-        // No especificamos el evento exacto, solo verificamos que se resuelve
-        oracle.resolve(attestationId);
+        vm.expectEmit(true, false, false, true);
+        emit Resolved("consensus_case", AttestationOracle.AttestationState.CLOSED);
 
-        // Verificar que se resolvió correctamente
-        (AttestationOracle.AttestationState state, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
-        assertTrue(uint256(state) > uint256(AttestationOracle.AttestationState.OPEN));
-        assertEq(finalResult, 1);
+        oracle.resolve("consensus_case");
+
+        // Verificar resolución
+        (AttestationOracle.AttestationState state, uint256 finalResult) = 
+            oracle.getAttestationInfo("consensus_case");
+        assertEq(uint256(state), 3); // CLOSED
+        assertEq(finalResult, recordId);
+        console.log("Caso resuelto con estado:", uint256(state));
     }
 
-    // verifyAttestation funciona correctamente
     function test_VerifyAttestation() public {
-        // Crear una situación donde se necesita verificación
+        // Crear caso conflictivo
         vm.prank(user1);
-        (uint256 attestationId,) = oracle.createAttestation("ipfs://test-hash");
+        uint256 record1 = oracle.createAttestation(
+            "disputed_case", 
+            "QmEvidence1", 
+            "QmParticipation1"
+        );
 
+        // Crear evidencia conflictiva
         vm.prank(user2);
+        oracle.attest("disputed_case", 0, false, "QmCounterEvidence", "QmParticipation2");
 
-        oracle.attest(attestationId, 1, false, ""); // Voto en contra
-        console.log(oracle.attestStart(), oracle.attestEnd());
-        vm.warp(block.timestamp + 3 hours);
-        oracle.resolve(attestationId);
-        (AttestationOracle.AttestationState state,) = oracle.getAttestationInfo(attestationId);
-        assertEq(uint256(state), uint256(AttestationOracle.AttestationState.VERIFYING));
+        // Resolver -> debería ir a VERIFYING
+        vm.warp(block.timestamp + 3601);
+        oracle.resolve("disputed_case");
+
+        // Verificar que está en estado VERIFYING
+        (AttestationOracle.AttestationState state,) = oracle.getAttestationInfo("disputed_case");
+        assertEq(uint256(state), 2); // VERIFYING
+
+        // Authority verifica
         vm.prank(authority);
-        oracle.verifyAttestation(attestationId, 1);
-        console.log(authority);
-        (state,) = oracle.getAttestationInfo(attestationId);
-        assertEq(uint256(state), uint256(AttestationOracle.AttestationState.CLOSED));
+        oracle.verifyAttestation("disputed_case", record1);
+
+        // Verificar resolución final
+        (state,) = oracle.getAttestationInfo("disputed_case");
+        assertEq(uint256(state), 3); // CLOSED
+        console.log("Caso verificado por autoridad");
     }
 
-    //Verificar que setActiveTime funciona correctamente
     function test_SetActiveTime() public {
-        uint256 newStart = block.timestamp + 5 hours;
-        uint256 newEnd = block.timestamp + 10 hours;
+        uint256 newStart = block.timestamp + 7200; // +2 horas
+        uint256 newEnd = block.timestamp + 14400;   // +4 horas
 
-        vm.prank(admin);
         oracle.setActiveTime(newStart, newEnd);
 
         assertEq(oracle.attestStart(), newStart);
         assertEq(oracle.attestEnd(), newEnd);
 
-        // Verificar que las funciones que requieren estar activo fallan fuera del tiempo
-        vm.warp(block.timestamp + 1); // Antes del nuevo start
-        console.log("Current time:", block.timestamp);
+        // Verificar que falla cuando está inactivo
         vm.expectRevert("Oracle inactive");
         vm.prank(user1);
-        oracle.createAttestation("test");
+        oracle.createAttestation("inactive_test", "QmTest", "QmTest");
+
+        console.log("Tiempos activos actualizados");
+    }
+
+    function test_GetWeighedAttestations() public {
+        vm.prank(user1);
+        uint256 recordId = oracle.createAttestation(
+            "weight_test", 
+            "QmEvidence", 
+            "QmParticipation1"
+        );
+
+        // Verificar peso inicial
+        assertEq(oracle.getWeighedAttestations("weight_test", recordId), 1);
+
+        vm.prank(user2);
+        oracle.attest("weight_test", recordId, true, "", "QmParticipation2");
+
+        // Verificar peso combinado
+        assertEq(oracle.getWeighedAttestations("weight_test", recordId), 2);
+        console.log("Peso total de atestiguaciones:", oracle.getWeighedAttestations("weight_test", recordId));
+    }
+
+    function test_ViewAttestationResult() public {
+        vm.prank(user1);
+        uint256 record1 = oracle.createAttestation(
+            "result_test", 
+            "QmEvidence1", 
+            "QmParticipation1"
+        );
+
+        vm.prank(user2);
+        oracle.attest("result_test", record1, true, "", "QmParticipation2");
+
+        vm.prank(jury1);
+        oracle.attest("result_test", record1, true, "", "QmParticipation3");
+
+        // Resolver para calcular resultados
+        vm.warp(block.timestamp + 3601);
+        oracle.resolve("result_test");
+
+        (uint256 mostAttested, uint256 mostJuryAttested) = 
+            oracle.viewAttestationResult("result_test");
+        
+        assertEq(mostAttested, record1);
+        assertEq(mostJuryAttested, record1);
+        console.log("Record mas atestiguado:", mostAttested);
     }
 }

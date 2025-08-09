@@ -60,6 +60,7 @@ contract AttestationOracle is AccessControl {
         mapping(address => bool) juryParticipated;
         uint256 userCount;
         uint256 juryCount;
+        //uint256 record;
 
         uint256 cumulatedStake; //cumulated stake to redistrubute
         uint256 mostAttested; //record most attested by users
@@ -172,13 +173,13 @@ contract AttestationOracle is AccessControl {
      * execute a sequence of transactions
      * @param id attestation identifier
      * @param uri a string of IPFS json containing record image and data
-     * @param participationUri a string of IPFS json containing participation image and data if needed
+     * image and data if needed
      */
-    function createAttestation(string calldata id, string calldata uri, string calldata participationUri)
-        external
-        onlyVerified
-        onlyActive
-        returns (uint256 recordId)
+    function createAttestation(string calldata id, string calldata uri, string calldata participationUrl) 
+        external onlyVerified onlyActive 
+        returns (uint256 recordId) 
+        //external onlyVerified onlyActive
+        //returns (uint256 recordId)
     {
         Attestation storage q = attestations[id];
         require(q.records.length == 0, "Already created");
@@ -230,6 +231,8 @@ contract AttestationOracle is AccessControl {
      * @param uri IPFS json of new record to attest as real, if uploaded, record and choice are ignored
      * @param participationUri a string of IPFS json containing participation image and data if needed
      */
+
+
     function attest(string calldata id, uint256 record, bool choice, string calldata uri, string calldata participationUri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
@@ -286,7 +289,14 @@ contract AttestationOracle is AccessControl {
 
 
     // despues de los atestiguamientos
-    function _upprecalcMostAttested(uint256 id, uint256 record, bool isJury, int256 newWeight) private {
+
+    // se pide convertir a string 
+
+
+    
+    /* function _upprecalcMostAttested(uint256 id, uint256 record, bool isJury, int256 newWeight) private{
+    */
+    function _upprecalcMostAttested(string calldata id, uint256 record, bool isJury, int256 newWeight) private {
     Attestation storage q = attestations[id];
     
     if (isJury) {
@@ -458,6 +468,7 @@ contract AttestationOracle is AccessControl {
      */
     function _checkUnanimity(string calldata id) private {
         Attestation storage q = attestations[id];
+        uint256 record;
 
         if(
             !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0) &&
