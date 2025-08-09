@@ -9,7 +9,7 @@ pragma solidity ^0.8.24;
  */
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IAttestationRecord} from "./interfaces/IAttestationRecord.sol";
+import {AttestationRecord} from "./AttestationRecord.sol";
 import {IReputation} from "./interfaces/IReputation.sol";
 import {IWiraToken} from "./interfaces/IWiraToken.sol";
 
@@ -59,7 +59,7 @@ contract AttestationOracle is AccessControl {
         AttestationState resolved; //state of attestation
     }
 
-    IAttestationRecord public immutable attestationRecord;
+    AttestationRecord public immutable attestationRecord;
     IReputation public immutable reputation;
     IWiraToken public immutable stakeToken;
     uint256 public stake;
@@ -80,7 +80,7 @@ contract AttestationOracle is AccessControl {
         address _stakeToken,
         uint256 _stake
     ) {
-        attestationRecord = IAttestationRecord(_attestationRecord);
+        attestationRecord = AttestationRecord(_attestationRecord);
         reputation = IReputation(_reputation);
         stakeToken = IWiraToken(_stakeToken);
         stake = _stake;

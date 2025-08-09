@@ -1,6 +1,7 @@
 pragma solidity ^0.8.24;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "lib/forge-std/src/Test.sol";
+import {console} from "lib/forge-std/src/console.sol"; 
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {AttestationOracle} from "../../src/AttestationOracle.sol";
@@ -10,7 +11,6 @@ import {Participation} from "../../src/Participation.sol";
 import {WiraToken} from "../../src/WiraToken.sol";
 
 contract AttestationFlowTest is Test {
-<<<<<<< HEAD
     Reputation reputation;
     AttestationRecord recordNft;
     Participation participation;
@@ -18,24 +18,6 @@ contract AttestationFlowTest is Test {
     WiraToken token;
     address owner;
     string participationNft = "participation nft";
-=======
-    function initContracts()
-        public
-        returns (
-            address user,
-            address user2,
-            address user3,
-            address jury,
-            address authorized,
-            Reputation reputation,
-            AttestationRecord recordNft,
-            AttestationOracle oracle,
-            WiraToken token
-        )
-    {
-        //address of contract owner to grant roles and access to reputation and nft
-        address owner = address(0x123);
->>>>>>> origin/ronaldo-smart
 
     function setUp() public {
         //address of contract owner to grant roles and access to reputation and nft
@@ -52,7 +34,6 @@ contract AttestationFlowTest is Test {
         token = new WiraToken(owner, owner, owner);
 
         //init oracle
-<<<<<<< HEAD
         oracle = new AttestationOracle(
             owner,
             address(recordNft),
@@ -61,9 +42,6 @@ contract AttestationFlowTest is Test {
             address(token),
             5e18
         );
-=======
-        oracle = new AttestationOracle(owner, address(recordNft), address(reputation), address(token), 5e18);
->>>>>>> origin/ronaldo-smart
 
         vm.startPrank(owner);
         //Authorize oracle access to record and reputation contracts

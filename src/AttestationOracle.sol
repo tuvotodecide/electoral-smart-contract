@@ -90,18 +90,8 @@ contract AttestationOracle is AccessControl {
     IReputation public immutable reputation;
     IWiraToken public immutable stakeToken;
     uint256 public stake;
-<<<<<<< HEAD
     uint256 public totalAttestations;
     mapping(string => Attestation) private attestations;
-=======
-    uint256 public attestationWindow = 2 hours; // time max 
-    uint256 public totalAttestations;
-
-
-    // convertido a mapping 
-    /// uint256 Attestation  private attestations;
-    mapping(uint256 => Attestation) private attestations;
->>>>>>> origin/ronaldo-smart
 
     event RegisterRequested(address user, string uri);
     event AttestationCreated(string id, uint256 recordId);
@@ -144,13 +134,8 @@ contract AttestationOracle is AccessControl {
 
     // function 1
     //External call by user to init register
-<<<<<<< HEAD
     function requestRegister(string calldata uri) external onlyActive {
         if(!hasRole(USER_ROLE, msg.sender) && !hasRole(JURY_ROLE, msg.sender)) {
-=======
-    function requestRegister(string memory uri) external onlyActive {
-        if (!hasRole(USER_ROLE, msg.sender) && !hasRole(JURY_ROLE, msg.sender)) {
->>>>>>> origin/ronaldo-smart
             emit RegisterRequested(msg.sender, uri);
         }
     }
@@ -167,12 +152,7 @@ contract AttestationOracle is AccessControl {
     /**
      * make a stake deposit of an attestation to redistribute on resolve
      */
-<<<<<<< HEAD
     function _depositStake(string calldata id) private {
-=======
-    // funcion staking 
-    function _depositStake(uint256 id) private {
->>>>>>> origin/ronaldo-smart
         stakeToken.mint(address(this), stake);
         attestations[id].cumulatedStake += stake;
     }
@@ -181,7 +161,6 @@ contract AttestationOracle is AccessControl {
      * Mint a participation NFT if user doesn't have one yet
      * @param uri a string of IPFS json containing participation image and data
      */
-<<<<<<< HEAD
     function _mintParticipationNft(string calldata uri) private {
         if(participation.balanceOf(msg.sender) == 0) {
             uint256 nftId = participation.safeMint(msg.sender, uri);
@@ -196,12 +175,6 @@ contract AttestationOracle is AccessControl {
      * @param participationUri a string of IPFS json containing participation image and data if needed
      */
     function createAttestation(string calldata id, string calldata uri, string calldata participationUri)
-=======
-    // 4
-
-
-    function createAttestation(string memory uri)
->>>>>>> origin/ronaldo-smart
         external
         onlyVerified
         onlyActive
@@ -212,20 +185,7 @@ contract AttestationOracle is AccessControl {
 
         //mint new NFT for record
         recordId = attestationRecord.safeMint(msg.sender, uri);
-<<<<<<< HEAD
         q.records.push(recordId);
-=======
-        // se incrementa
-        id = totalAttestations++;
-        //init new attestation
-        // Attestation storage q = attestations.push();
-        Attestation storage q = attestations[id];
-        q.recordExists[recordId] = true;
-        q.recordCount = 1;
-        q.firstRecord = recordId;
-
-        //q.records.push(recordId);
->>>>>>> origin/ronaldo-smart
         q.attested[msg.sender] = AttestationChoice(recordId, true);
 
         //add record with user vote
@@ -246,6 +206,7 @@ contract AttestationOracle is AccessControl {
             q.userAttestations[recordId] = RecordAttestation(1, 0, userReputation);
             
         }
+    }
         
         /*if (!isJury) {
             q.usersAttested.push(msg.sender);
@@ -253,14 +214,8 @@ contract AttestationOracle is AccessControl {
         } else {
             q.juriesAttested.push(msg.sender);
             q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
-<<<<<<< HEAD
         }
         totalAttestations++;
-=======
-        }*/
-        //id = totalAttestations++;
-
->>>>>>> origin/ronaldo-smart
         //deposit first stake
         _depositStake(id);
         _mintParticipationNft(participationUri);
@@ -275,17 +230,7 @@ contract AttestationOracle is AccessControl {
      * @param uri IPFS json of new record to attest as real, if uploaded, record and choice are ignored
      * @param participationUri a string of IPFS json containing participation image and data if needed
      */
-<<<<<<< HEAD
     function attest(string calldata id, uint256 record, bool choice, string calldata uri, string calldata participationUri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
-=======
-    // 5
-    function attest(uint256 id, uint256 record, bool choice, string memory uri)
-        external
-        onlyVerified
-        onlyActive
-        onlyInState(id, AttestationState.OPEN)
-    {
->>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
 
@@ -304,15 +249,10 @@ contract AttestationOracle is AccessControl {
                 q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
             }
             _depositStake(id);
-<<<<<<< HEAD
             _mintParticipationNft(participationUri);
             emit Attested(recordId);
             return recordId;
         //check that record exists and register user choice
-=======
-            emit Attested();
-            //check that record exists and register user choice
->>>>>>> origin/ronaldo-smart
         } else if (q.userAttestations[record].yesCount > 0 || q.juryAttestations[record].yesCount > 0) {
             if (!isJury) {
                 q.usersAttested.push(msg.sender);
@@ -369,12 +309,7 @@ contract AttestationOracle is AccessControl {
      * Resolve an attestation after time defined on attestationWindow
      * @param id attestation identifier
      */
-<<<<<<< HEAD
     function resolve(string calldata id) public onlyInState(id, AttestationState.OPEN) {
-=======
-    //6
-    function resolve(uint256 id) external onlyInState(id, AttestationState.OPEN) {
->>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         require(block.timestamp > attestEnd, "too soon");
 
@@ -472,13 +407,8 @@ contract AttestationOracle is AccessControl {
 
 
         //only users voted
-<<<<<<< HEAD
         if(q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
             if(mostAttestations > 0 && q.userAttestations[q.mostAttested].yesCount > 2) {
-=======
-        if (q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
-            if (mostAttestations > 0 && q.userAttestations[q.finalResult].yesCount > 2) {
->>>>>>> origin/ronaldo-smart
                 q.finalResult = q.mostAttested;
                 _setReputation(id);
                 q.resolved = AttestationState.CONSENSUAL;
@@ -526,31 +456,14 @@ contract AttestationOracle is AccessControl {
      * Also sets users/juries reputation.
      * @param id attestation identifier
      */
-<<<<<<< HEAD
     function _checkUnanimity(string calldata id) private {
-=======
-    //
-    function _checkUnanimity(uint256 id) private {
->>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
 
-<<<<<<< HEAD
         if(
             !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0) &&
             !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2) &&
             !(q.usersAttested.length == 0 && q.juryAttestations[record].weighedAttestation > 0)
         ){
-=======
-        // q.records[0] -> q.firts.record;
-        uint256 record = q.records[0];
-        //uint256 record = q.firstRecord;
-        
-
-        if (
-            !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0)
-                && !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2)
-        ) {
->>>>>>> origin/ronaldo-smart
             q.resolved = AttestationState.VERIFYING;
             emit InitVerification(id);
             return;
@@ -571,15 +484,10 @@ contract AttestationOracle is AccessControl {
 
         for (uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
-<<<<<<< HEAD
             bool up = q.attested[user].choice;
             reputation.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
-=======
-            reputation.updateReputation(user, q.attested[user].choice);
-            if (q.attested[user].choice) {
->>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
@@ -593,15 +501,10 @@ contract AttestationOracle is AccessControl {
 
         for (uint256 i = 0; i < q.juriesAttested.length; i++) {
             address jury = q.juriesAttested[i];
-<<<<<<< HEAD
             bool up = q.attested[jury].choice;
             reputation.updateReputation(jury, up);
             emit ReputationUpdated(id, jury, up);
             if(up) {
-=======
-            reputation.updateReputation(jury, q.attested[jury].choice);
-            if (q.attested[jury].choice) {
->>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(jury, distributionAmount);
             }
         }
@@ -651,12 +554,7 @@ contract AttestationOracle is AccessControl {
      * Update users/juries reputation given an attestation with a final result
      * @param id attestation identifier
      */
-<<<<<<< HEAD
     function _setReputation(string calldata id) internal {
-=======
-    // 8
-    function _setReputation(uint256 id) internal {
->>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         require(q.finalResult != 0, "Not final set");
         uint256 finalResult = q.finalResult;
@@ -666,56 +564,32 @@ contract AttestationOracle is AccessControl {
 
         for (uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
-<<<<<<< HEAD
             bool up = q.attested[user].record == finalResult && q.attested[user].choice;
             reputation.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
-=======
-            reputation.updateReputation(user, q.attested[user].record == finalResult && q.attested[user].choice);
-            if (q.attested[user].record == finalResult && q.attested[user].choice) {
->>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
 
         for (uint256 i = 0; i < q.juriesAttested.length; i++) {
             address user = q.juriesAttested[i];
-<<<<<<< HEAD
             bool up = q.attested[user].record == finalResult && q.attested[user].choice;
             reputation.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
-=======
-            reputation.updateReputation(user, q.attested[user].record == finalResult && q.attested[user].choice);
-            if (q.attested[user].record == finalResult && q.attested[user].choice) {
->>>>>>> origin/ronaldo-smart
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
     }
 
     /**
-<<<<<<< HEAD
     * Set final result for VERIFYING attestation,
     * only callable by AUTHORITIES
     * @param id attestation identifier
     * @param choice record selected as real
     */
     function verifyAttestation(string calldata id, uint256 choice) external onlyRole(AUTHORITY_ROLE) onlyInState(id, AttestationState.VERIFYING) {
-=======
-     * Set final result for VERIFYING attestation,
-     * only callable by AUTHORITIES
-     * @param id index of attestation
-     * @param choice record selected as real
-     */
-    // 9
-    function verifyAttestation(uint256 id, uint256 choice)
-        external
-        onlyRole(AUTHORITY_ROLE)
-        onlyInState(id, AttestationState.VERIFYING)
-    {
->>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         if (q.userAttestations[choice].yesCount > 0 || q.juryAttestations[choice].yesCount > 0) {
             q.finalResult = choice;
@@ -724,51 +598,29 @@ contract AttestationOracle is AccessControl {
         }
     }
 
-<<<<<<< HEAD
     function getAttestationInfo(string calldata id) external view returns(
         AttestationState resolved, uint256 finalResult
     ){
-=======
-    // 10
-    function getAttestationInfo(uint256 id) external view returns (AttestationState resolved, uint256 finalResult) {
->>>>>>> origin/ronaldo-smart
         Attestation storage q = attestations[id];
         return (q.resolved, q.finalResult);
     }
 
-<<<<<<< HEAD
     function getWeighedAttestations(string calldata id, uint256 record) external view returns(int256) {
-=======
-    // 11
-    function getWeighedAttestations(uint256 id, uint256 record) external view returns (int256) {
->>>>>>> origin/ronaldo-smart
         return attestations[id].userAttestations[record].weighedAttestation;
     }
     // 12
 
-<<<<<<< HEAD
     function getJuryWeighedAttestations(string calldata id, uint256 record) external view returns(int256) {
-=======
-    function getJuryWeighedAttestations(uint256 id, uint256 record) external view returns (int256) {
->>>>>>> origin/ronaldo-smart
         return attestations[id].juryAttestations[record].weighedAttestation;
     }
     // 13
 
-<<<<<<< HEAD
     function getOptionAttested(string calldata id) external view returns(uint256, bool) {
-=======
-    function getOptionAttested(uint256 id) external view returns (uint256, bool) {
->>>>>>> origin/ronaldo-smart
         return (attestations[id].attested[msg.sender].record, attestations[id].attested[msg.sender].choice);
     }
     // 14
 
-<<<<<<< HEAD
     function viewAttestationResult(string calldata id) external view returns(uint256, uint256) {
-=======
-    function viewAttestationResult(uint256 id) external view returns (uint256, uint256) {
->>>>>>> origin/ronaldo-smart
         return (attestations[id].mostAttested, attestations[id].mostJuryAttested);
     }
     // 15
