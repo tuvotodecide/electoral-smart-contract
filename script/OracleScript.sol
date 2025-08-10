@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "forge-std/Script.sol";
+import {Script} from "lib/forge-std/src/Script.sol";
+import {console} from "lib/forge-std/src/console.sol";
 import {AttestationOracle} from "../src/AttestationOracle.sol";
 import {Reputation} from "../src/Reputation.sol";
 import {AttestationRecord} from "../src/AttestationRecord.sol";

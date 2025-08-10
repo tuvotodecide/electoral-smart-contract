@@ -26,10 +26,10 @@ contract AttestationOracleTestUp is Test {
 
     // Events para testing
     event RegisterRequested(address user, string uri);
-    event AttestationCreated(uint256 id, uint256 recordId);
+    event AttestationCreated(string id, uint256 recordId);
     event Attested(uint256 recordId);
-    event Resolved(uint256 id, AttestationOracle.AttestationState closeState);
-    event InitVerification(uint256 id);
+    event Resolved(string id, AttestationOracle.AttestationState closeState);
+    event InitVerification(string id);
 
     function setUp() public {
         // Configurar addresses
@@ -190,7 +190,7 @@ function test_RequestRegister_EmitsEvent() public {
 
         vm.prank(user1);
         vm.expectEmit(false, false, false, true);
-        emit AttestationCreated(0, 1);
+        emit AttestationCreated("election_fraud_case_001", 1);
 
         uint256 recordId = oracle.createAttestation(
             "election_fraud_case_001", 
@@ -374,7 +374,7 @@ function test_RequestRegister_EmitsEvent() public {
 
         vm.expectEmit(true, false, false, true);
         console.log("clear fraud");
-        emit Resolved(1, AttestationOracle.AttestationState.CLOSED);
+        emit Resolved("clear_fraud", AttestationOracle.AttestationState.CLOSED);
 
         oracle.resolve("clear_fraud");
 
@@ -410,7 +410,7 @@ function test_RequestRegister_EmitsEvent() public {
         vm.warp(block.timestamp + 86401);
 
         vm.expectEmit(true, false, false, true);
-        emit InitVerification(1);
+        emit InitVerification("contested_fraud");
 
         oracle.resolve("contested_fraud");
 

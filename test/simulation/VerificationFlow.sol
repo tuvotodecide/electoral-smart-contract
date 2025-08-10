@@ -14,6 +14,7 @@ contract VerificationFlowTest is Test {
     AttestationRecord recordNft;
     Participation participation;
     Reputation reputation;
+    WiraToken token;
     address owner;
     string participationNft = "participation nft";
 
@@ -29,7 +30,7 @@ contract VerificationFlowTest is Test {
         reputation = new Reputation(owner);
 
         //init stake wira token
-        WiraToken token = new WiraToken(owner, owner, owner);
+        token = new WiraToken(owner, owner, owner);
 
         //init oracle
         oracle = new AttestationOracle(
@@ -49,18 +50,13 @@ contract VerificationFlowTest is Test {
         //Authorize oracle access to record contract
         recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
         participation.grantRole(participation.AUTHORIZED_ROLE(), address(oracle));
-        reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
+        reputation.grantRole(reputation.AUTHORIZED_ROLE(), address(oracle));
         token.grantRole(token.MINTER_ROLE(), address(oracle));
         vm.stopPrank();
     }
 
     function test_createAttestation_givesOnlyOneParticipation() public {
         address user = makeAddr("user");
-
-        //set oracle active period
-        vm.prank(owner);
-        oracle.setActiveTime(0, 200);
-        vm.warp(100);
 
         //request register as user (send empty uri)
         vm.prank(user);
@@ -87,11 +83,6 @@ contract VerificationFlowTest is Test {
 
     function test_createAttestation_withRegisterUser() public {
         address user = makeAddr("user");
-
-        //set oracle active period
-        vm.prank(owner);
-        oracle.setActiveTime(0, 200);
-        vm.warp(100);
 
         //request register as user (send empty uri)
         vm.prank(user);
@@ -130,7 +121,7 @@ contract VerificationFlowTest is Test {
         vm.prank(owner);
         oracle.register(user, false);
 
-        //default active period is 0-200, ser current time to 201
+        //default active period is 0-200, set current time to 201
         vm.warp(201);
         vm.expectRevert(bytes("Oracle inactive"));
         vm.prank(user);
@@ -152,7 +143,7 @@ contract VerificationFlowTest is Test {
         vm.prank(user1);
         uint256 recordId = oracle.createAttestation(id, "record 1", participationNft);
 
-        //default active period is 0-200, ser current time to 201
+        //default active period is 0-200, set current time to 201
         vm.warp(201);
         //test attest
         vm.expectRevert(bytes("Oracle inactive"));
@@ -226,11 +217,6 @@ contract VerificationFlowTest is Test {
     }
 
     function test_attest_givesOnlyOneParticipation() public {
-        //set oracle active period
-        vm.prank(owner);
-        oracle.setActiveTime(0, 200);
-        vm.warp(100);
-
         address user1 = makeAddr("user1");
         address user2 = makeAddr("user2");
 
