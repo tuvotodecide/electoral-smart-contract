@@ -11,6 +11,7 @@ import {WiraToken} from "../src/WiraToken.sol";
 contract OracleScript is Script {
   function run() external {
     address stakeToken = vm.envAddress("STAKE_TOKEN");
+    address resolver = vm.envAddress("RESOLVER");
     WiraToken stakeContract = WiraToken(stakeToken);
 
     vm.startBroadcast();
@@ -36,6 +37,7 @@ contract OracleScript is Script {
     participation.grantRole(participation.AUTHORIZED_ROLE(), address(oracle));
     reputation.grantRole(reputation.AUTHORIZED_ROLE(), address(oracle));
     stakeContract.grantRole(stakeContract.MINTER_ROLE(), address(oracle));
+    oracle.grantRole(oracle.DEFAULT_ADMIN_ROLE(), resolver);
 
     vm.stopBroadcast();
     console.log("Oracle deployed at:", address(oracle));
