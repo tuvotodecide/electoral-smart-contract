@@ -23,7 +23,8 @@ contract AttestationOracle is AccessControl {
         OPEN,
         CONSENSUAL,
         VERIFYING,
-        CLOSED
+        CLOSED,
+        PENDING
     }
 
     struct AttestationChoice {
@@ -239,32 +240,44 @@ contract AttestationOracle is AccessControl {
             return;
         }
 
-        //Get most attested record by users
+        //Get most attested record by users and juries
         int256 mostAttestations;
+        int256 mostJuryAttestations;
+        uint8 tiesCount;
+        uint8 juryTiesCount;
         for(uint256 i = 0; i < q.records.length; i++) {
-            int256 attestationCount = q.userAttestations[q.records[i]].weighedAttestation;
-            if(attestationCount > mostAttestations) {
-                mostAttestations = attestationCount;
-                q.mostAttested = q.records[i];
+            uint256 record = q.records[i];
+            int256 userCount = q.userAttestations[record].weighedAttestation;
+            int256 juryCount = q.juryAttestations[record].weighedAttestation;
+            if(userCount > mostAttestations) {
+                mostAttestations = userCount;
+                q.mostAttested = record;
+                tiesCount = 0;
+            } else if (userCount == mostAttestations) {
+                tiesCount++;
+            }
+            if(juryCount > mostJuryAttestations) {
+                mostJuryAttestations = juryCount;
+                q.mostJuryAttested = record;
+                juryTiesCount = 0;
+            } else if(juryCount == mostJuryAttestations) {
+                juryTiesCount++;
             }
         }
-
-        //Get most attested record by juries
-        int256 mostJuryAttestations;
-        for(uint256 i = 0; i < q.records.length; i++) {
-            int256 attestationCount = q.juryAttestations[q.records[i]].weighedAttestation;
-            if(attestationCount > mostJuryAttestations) {
-                mostJuryAttestations = attestationCount;
-                q.mostJuryAttested = q.records[i];
-            }
+        
+        //check ties
+        if(tiesCount > 0 && juryTiesCount > 0) {
+            q.resolved = AttestationState.VERIFYING;
+            emit InitVerification(id);
+            return;
         }
 
         //only users voted
         if(q.usersAttested.length > 0 && q.juriesAttested.length == 0) {
-            if(mostAttestations > 0 && q.userAttestations[q.mostAttested].yesCount > 2) {
+            if(mostAttestations > 0 && tiesCount == 0) {
                 q.finalResult = q.mostAttested;
+                q.resolved = q.userAttestations[q.mostAttested].yesCount > 2 ? AttestationState.CONSENSUAL : AttestationState.PENDING;
                 _setReputation(id);
-                q.resolved = AttestationState.CONSENSUAL;
                 emit Resolved(id, q.resolved);
             } else {
                 q.resolved = AttestationState.VERIFYING;
@@ -273,7 +286,7 @@ contract AttestationOracle is AccessControl {
         }
         //only juries voted
         else if(q.usersAttested.length == 0 && q.juriesAttested.length > 0) {
-            if(mostJuryAttestations > 0) {
+            if(mostJuryAttestations > 0 && juryTiesCount == 0) {
                 q.finalResult = q.mostJuryAttested;
                 _setReputation(id);
                 q.resolved = AttestationState.CONSENSUAL;
@@ -284,7 +297,7 @@ contract AttestationOracle is AccessControl {
             }
         }
         //most users match most juries
-        else if(q.mostAttested == q.mostJuryAttested) {
+        else if(q.mostAttested == q.mostJuryAttested && tiesCount == 0 && juryTiesCount == 0) {
             if(mostAttestations > 0 && mostJuryAttestations > 0) {
                 q.finalResult = q.mostAttested;
                 _setReputation(id);
@@ -295,11 +308,43 @@ contract AttestationOracle is AccessControl {
                 emit InitVerification(id);
             }
         }
+        //users tie but juries not
+        else if (tiesCount > 0 && juryTiesCount == 0) {
+            uint256[] memory userTieRecords = new uint256[](tiesCount + 1);
+            uint8 userIndex = 0;
+            for(uint256 i = 0; i < q.records.length; i++) {
+                uint256 record = q.records[i];
+                int256 userCount = q.userAttestations[record].weighedAttestation;
+                if(userCount == mostAttestations) {
+                    userTieRecords[userIndex] = record;
+                    userIndex++;
+                }
+            }
+
+            if(_checkIsInRecords(q.mostJuryAttested, userTieRecords)) {
+                q.finalResult = q.mostJuryAttested;
+                _setReputation(id);
+                q.resolved = AttestationState.CONSENSUAL;
+                emit Resolved(id, q.resolved);
+            }else{
+                q.resolved = AttestationState.VERIFYING;
+                emit InitVerification(id);
+            }
+        }
         //most users doesn't match most juries
         else {
             q.resolved = AttestationState.VERIFYING;
             emit InitVerification(id);
         }
+    }
+
+    function _checkIsInRecords(uint256 record, uint256[] memory array) private pure returns(bool) {
+        for(uint256 i = 0; i < array.length; i++) {
+            if(array[i] == record) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -312,11 +357,7 @@ contract AttestationOracle is AccessControl {
         Attestation storage q = attestations[id];
         uint256 record = q.records[0];
 
-        if(
-            !(q.userAttestations[record].weighedAttestation > 0 && q.juryAttestations[record].weighedAttestation > 0) &&
-            !(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount > 2) &&
-            !(q.usersAttested.length == 0 && q.juryAttestations[record].weighedAttestation > 0)
-        ){
+        if(q.userAttestations[record].weighedAttestation <= 0 && q.juryAttestations[record].weighedAttestation <= 0){
             q.resolved = AttestationState.VERIFYING;
             emit InitVerification(id);
             return;
@@ -348,7 +389,9 @@ contract AttestationOracle is AccessControl {
             }
         }
 
-        if(q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
+        if(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount <= 2) {
+            q.resolved = AttestationState.PENDING;
+        } else if(q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
             q.resolved = AttestationState.CONSENSUAL;
         } else {
             q.resolved = AttestationState.CLOSED;
