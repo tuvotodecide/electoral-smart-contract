@@ -1,23 +1,19 @@
 pragma solidity ^0.8.24;
 
-import {Test, console} from "forge-std/Test.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {Test} from "forge-std/Test.sol";
 
 import {AttestationOracle} from "../../src/AttestationOracle.sol";
 import {Reputation} from "../../src/Reputation.sol";
 import {AttestationRecord} from "../../src/AttestationRecord.sol";
-import {Participation} from "../../src/Participation.sol";
 import {WiraToken} from "../../src/WiraToken.sol";
 
 contract AttestationFlowTest is Test {
     Reputation reputation;
     AttestationRecord recordNft;
-    Participation participation;
     AttestationOracle oracle;
     WiraToken token;
     address owner;
     address resolver;
-    string participationNft = "participation nft";
 
     function setUp() public {
         //address of contract owner to grant roles and access to reputation and nft
@@ -29,7 +25,6 @@ contract AttestationFlowTest is Test {
 
         //init nft contract for records and participation
         recordNft = new AttestationRecord(owner);
-        participation = new Participation(owner);
 
         //init stake wira token
         token = new WiraToken(owner, owner, owner);
@@ -38,7 +33,6 @@ contract AttestationFlowTest is Test {
         oracle = new AttestationOracle(
             owner,
             address(recordNft),
-            address(participation),
             address(reputation),
             address(token),
             5e18
@@ -47,7 +41,6 @@ contract AttestationFlowTest is Test {
         vm.startPrank(owner);
         //Authorize oracle access to record and reputation contracts
         recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
-        participation.grantRole(participation.AUTHORIZED_ROLE(), address(oracle));
         reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
         token.grantRole(token.MINTER_ROLE(), address(oracle));
         oracle.grantRole(oracle.DEFAULT_ADMIN_ROLE(), resolver);
@@ -68,7 +61,7 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record
         string memory attestationId = "1";
         vm.prank(user1);
-        (uint256 recordId) = oracle.createAttestation(attestationId, "record 1", participationNft);
+        (uint256 recordId) = oracle.createAttestation(attestationId, "record 1");
 
         //wrap time and resolve
         vm.warp(201);
@@ -101,11 +94,11 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 recordId = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "record 1");
 
         //user 2 attest record 1
         vm.prank(user2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -144,15 +137,15 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 recordId = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "record 1");
 
         //user 2 attest record 1
         vm.prank(user2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //user 3 attest record 1
         vm.prank(user3);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -189,7 +182,7 @@ contract AttestationFlowTest is Test {
         //jury 1 uploads record
         string memory attestationId = "1";
         vm.prank(jury1);
-        uint256 recordId = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "record 1");
 
         //wrap time and resolve
         vm.warp(201);
@@ -225,15 +218,15 @@ contract AttestationFlowTest is Test {
         //jury 1 uploads record
         string memory attestationId = "1";
         vm.prank(jury1);
-        uint256 recordId = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "record 1");
 
         //jury 2 attest record 1
         vm.prank(jury2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //jury 3 attest record 1
         vm.prank(jury3);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -273,11 +266,11 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 recordId = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "record 1");
 
         //jury 1 attest record 1
         vm.prank(jury1);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -323,21 +316,21 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record
         vm.prank(user1);
         string memory attestationId = "1";
-        uint256 recordId = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "record 1");
 
         //users attest record 1
         vm.prank(user2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
         vm.prank(user3);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //juries attest record 1
         vm.prank(jury1);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
         vm.prank(jury2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
         vm.prank(jury3);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -391,15 +384,15 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        oracle.createAttestation(attestationId, "record 1", participationNft);
+        oracle.createAttestation(attestationId, "record 1");
 
         //user 2 uploads record 2 on same attestation
         vm.prank(user2);
-        oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        oracle.attest(attestationId, 0, false, "record 2");
 
         //user 3 uploads record 3 on same attestation
         vm.prank(user3);
-        oracle.attest(attestationId, 0, false, "record 3", participationNft);
+        oracle.attest(attestationId, 0, false, "record 3");
 
         //wrap time and resolve
         vm.warp(201);
@@ -443,19 +436,19 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        oracle.createAttestation(attestationId, "record 1", participationNft);
+        oracle.createAttestation(attestationId, "record 1");
 
         //user 2 uploads record 2 on same attestation
         vm.prank(user2);
-        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
 
         //user 3 uploads record 3 on same attestation
         vm.prank(user3);
-        oracle.attest(attestationId, 0, false, "record 3", participationNft);
+        oracle.attest(attestationId, 0, false, "record 3");
 
         //jury1 attest record 2
         vm.prank(jury1);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -502,19 +495,19 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        oracle.createAttestation(attestationId, "record 1", participationNft);
+        oracle.createAttestation(attestationId, "record 1");
 
         //user 2 uploads record 2 on same attestation
         vm.prank(user2);
-        oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        oracle.attest(attestationId, 0, false, "record 2");
 
         //user 3 uploads record 3 on same attestation
         vm.prank(user3);
-        oracle.attest(attestationId, 0, false, "record 3", participationNft);
+        oracle.attest(attestationId, 0, false, "record 3");
 
         //jury1 uploads record 4 on same attestation
         vm.prank(jury1);
-        oracle.attest(attestationId, 0, false, "record 4", participationNft);
+        oracle.attest(attestationId, 0, false, "record 4");
 
         //wrap time and resolve
         vm.warp(201);
@@ -563,23 +556,23 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        oracle.createAttestation(attestationId, "record 1", participationNft);
+        oracle.createAttestation(attestationId, "record 1");
 
         //user 2 uploads record 2 on same attestation
         vm.prank(user2);
-        oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        oracle.attest(attestationId, 0, false, "record 2");
 
         //user 3 uploads record 3 on same attestation
         vm.prank(user3);
-        oracle.attest(attestationId, 0, false, "record 3", participationNft);
+        oracle.attest(attestationId, 0, false, "record 3");
 
         //jury 1 uploads record 4 on same attestation
         vm.prank(jury1);
-        oracle.attest(attestationId, 0, false, "record 4", participationNft);
+        oracle.attest(attestationId, 0, false, "record 4");
 
         //jury 2 uploads record 5 on same attestation
         vm.prank(jury2);
-        oracle.attest(attestationId, 0, false, "record 5", participationNft);
+        oracle.attest(attestationId, 0, false, "record 5");
 
         //wrap time and resolve
         vm.warp(201);
@@ -631,23 +624,23 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 record1 = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
         //user 2 attest record 1
         vm.prank(user2);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //user 3 attest record 1
         vm.prank(user3);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //jury 1 uploads record 2 on same attestation
         vm.prank(jury1);
-        oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        oracle.attest(attestationId, 0, false, "record 2");
 
         //jury 2 uploads record 3 on same attestation
         vm.prank(jury2);
-        oracle.attest(attestationId, 0, false, "record 3", participationNft);
+        oracle.attest(attestationId, 0, false, "record 3");
 
         //wrap time and resolve
         vm.warp(201);
@@ -699,21 +692,21 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        oracle.createAttestation(attestationId, "record 1", participationNft);
+        oracle.createAttestation(attestationId, "record 1");
 
         //user 2 uploads record 2 on same attestation
         vm.prank(user2);
-        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
 
         //user 3 uploads record 3 on same attestation
         vm.prank(user3);
-        oracle.attest(attestationId, 0, false, "record 3", participationNft);
+        oracle.attest(attestationId, 0, false, "record 3");
 
         //users 4,5 attest record 2
         vm.prank(user4);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
         vm.prank(user5);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -773,21 +766,21 @@ contract AttestationFlowTest is Test {
         //jury 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(jury1);
-        uint256 record1 = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
         //jury 2 uploads record 2 on same attestation
         vm.prank(jury2);
-        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
 
         //jury 3 attest record 1
         vm.prank(jury3);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //juries 4,5 attest record 2
         vm.prank(jury4);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
         vm.prank(jury5);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -849,25 +842,25 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 record1 = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
         //user 2 uploads record 2
         vm.prank(user2);
-        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
 
         //user 3 attest record 1
         vm.prank(user3);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //juries 1,2 attest record 1
         vm.prank(jury1);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
         vm.prank(jury2);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //juriy 3 attest record 2
         vm.prank(jury3);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -940,31 +933,31 @@ contract AttestationFlowTest is Test {
         //jury 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(jury1);
-        uint256 record1 = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
         //user 1 uploads record 2
         vm.prank(user1);
-        oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        oracle.attest(attestationId, 0, false, "record 2");
 
         //user 2 uploads record 3
         vm.prank(user2);
-        uint256 record3 = oracle.attest(attestationId, 0, false, "record 3", participationNft);
+        uint256 record3 = oracle.attest(attestationId, 0, false, "record 3");
 
         //user 3 attest record 1
         vm.prank(user3);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //juries 2,3 attest record 1
         vm.prank(jury2);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
         vm.prank(jury3);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //users 4,5 attest record 3
         vm.prank(user4);
-        oracle.attest(attestationId, record3, true, "", participationNft);
+        oracle.attest(attestationId, record3, true, "");
         vm.prank(user5);
-        oracle.attest(attestationId, record3, true, "", participationNft);
+        oracle.attest(attestationId, record3, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -1032,15 +1025,15 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 record1 = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
         //user 2 attest record 1
         vm.prank(user2);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //user 3 uploads record 2
         vm.prank(user3);
-        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
 
         //wrap time and resolve
         vm.warp(201);
@@ -1092,21 +1085,21 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 record1 = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
         //user 2 attest record 1
         vm.prank(user2);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //user 3 uploads record 2
         vm.prank(user3);
-        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
 
         //users 4,5 attest record 2
         vm.prank(user4);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
         vm.prank(user5);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -1177,25 +1170,25 @@ contract AttestationFlowTest is Test {
         //user 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(user1);
-        uint256 record1 = oracle.createAttestation(attestationId, "record 1", participationNft);
+        uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
         //user 2 attest record 1
         vm.prank(user2);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //juries 1,2 attest record 1
         vm.prank(jury1);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
         vm.prank(jury2);
-        oracle.attest(attestationId, record1, true, "", participationNft);
+        oracle.attest(attestationId, record1, true, "");
 
         //user 3 uploads record 2
         vm.prank(user3);
-        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2", participationNft);
+        uint256 record2 = oracle.attest(attestationId, 0, false, "record 2");
 
         //jury 3 attest record 2
         vm.prank(jury3);
-        oracle.attest(attestationId, record2, true, "", participationNft);
+        oracle.attest(attestationId, record2, true, "");
 
         //wrap time and resolve
         vm.warp(201);
@@ -1254,7 +1247,7 @@ contract AttestationFlowTest is Test {
         string memory attestationId = "1";
         vm.startPrank(user1);
         //user inits a votation updating their first image
-        uint256 recordId = oracle.createAttestation(attestationId, "new record", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "new record");
 
         //check attestation created and user has record nft
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
@@ -1265,14 +1258,14 @@ contract AttestationFlowTest is Test {
 
         //user 2 attest yes
         vm.prank(user2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //check attest added +1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 2);
 
         //user 3 attest yes
         vm.prank(user3);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //check attest added +1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 3);
@@ -1317,7 +1310,7 @@ contract AttestationFlowTest is Test {
         string memory attestationId = "1";
         vm.startPrank(user1);
         //user inits a votation updating their first image
-        uint256 recordId = oracle.createAttestation(attestationId, "new record", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "new record");
 
         //check attestation created and user has record nft
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
@@ -1328,21 +1321,21 @@ contract AttestationFlowTest is Test {
 
         //user 2 attest yes
         vm.prank(user2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //check attest added +1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 2);
 
         //user 3 attest no
         vm.prank(user3);
-        oracle.attest(attestationId, recordId, false, "", participationNft);
+        oracle.attest(attestationId, recordId, false, "");
 
         //check attest added -1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 1);
 
         //jury attest yes
         vm.prank(jury1);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //check juries attest added +1
         assertEq(oracle.getJuryWeighedAttestations(attestationId, recordId), 1);
@@ -1391,7 +1384,7 @@ contract AttestationFlowTest is Test {
         string memory attestationId = "1";
         vm.startPrank(user1);
         //user inits a votation updating their first image
-        uint256 recordId = oracle.createAttestation(attestationId, "new record", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "new record");
 
         //check attestation created and user has record nft
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
@@ -1402,14 +1395,14 @@ contract AttestationFlowTest is Test {
 
         //user 2 attest yes
         vm.prank(user2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //check attest added +1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 2);
 
         //user 3 attest yes to new record
         vm.startPrank(user3);
-        oracle.attest(attestationId, recordId, true, "record 2", participationNft);
+        oracle.attest(attestationId, recordId, true, "record 2");
 
         //get user 3 vote
         (uint256 record2Id,) = oracle.getOptionAttested(attestationId);
@@ -1421,7 +1414,7 @@ contract AttestationFlowTest is Test {
 
         //jury attest yes to first record
         vm.prank(jury1);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //check juries attest added +1
         assertEq(oracle.getJuryWeighedAttestations(attestationId, recordId), 1);
@@ -1472,7 +1465,7 @@ contract AttestationFlowTest is Test {
         string memory attestationId = "1";
         vm.startPrank(user1);
         //user inits a votation updating their first image
-        uint256 recordId = oracle.createAttestation(attestationId, "new record", participationNft);
+        uint256 recordId = oracle.createAttestation(attestationId, "new record");
 
         //check attestation created and user has record nft
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
@@ -1483,14 +1476,14 @@ contract AttestationFlowTest is Test {
 
         //user 2 attest yes
         vm.prank(user2);
-        oracle.attest(attestationId, recordId, true, "", participationNft);
+        oracle.attest(attestationId, recordId, true, "");
 
         //check attest added +1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 2);
 
         //user 3 attest yes to new record
         vm.startPrank(user3);
-        oracle.attest(attestationId, recordId, true, "record 2", participationNft);
+        oracle.attest(attestationId, recordId, true, "record 2");
 
         //get user 3 vote
         (uint256 record2Id,) = oracle.getOptionAttested(attestationId);
@@ -1502,7 +1495,7 @@ contract AttestationFlowTest is Test {
 
         //jury attest yes to sencond record
         vm.prank(jury1);
-        oracle.attest(attestationId, record2Id, true, "", participationNft);
+        oracle.attest(attestationId, record2Id, true, "");
 
         //check juries attest added +1
         assertEq(oracle.getJuryWeighedAttestations(attestationId, record2Id), 1);

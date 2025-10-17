@@ -1,6 +1,14 @@
 {
   "wake.compiler.solc.remappings": [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
-    "@account-abstraction/=lib/account-abstraction/contracts/"
+    "@account-abstraction/=lib/account-abstraction/contracts/",
+    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
+    "account-abstraction/=lib/account-abstraction/contracts/",
+    "erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/",
+    "forge-std/=lib/forge-std/src/",
+    "halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/",
+    "openzeppelin-contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/",
+    "openzeppelin-contracts/=lib/openzeppelin-contracts/",
+    "openzeppelin-foundry-upgrades/=lib/openzeppelin-foundry-upgrades/src/"
   ]
 }

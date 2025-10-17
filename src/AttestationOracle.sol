@@ -53,7 +53,6 @@ contract AttestationOracle is AccessControl {
     }
 
     IMintableERC721 public immutable attestationRecord;
-    IMintableERC721 public immutable participation;
     IReputation public immutable reputation;
     IWiraToken public immutable stakeToken;
     uint256 public stake;
@@ -66,18 +65,15 @@ contract AttestationOracle is AccessControl {
     event ReputationUpdated(string id, address user, bool up);
     event Resolved(string id, AttestationState closeState);
     event InitVerification(string id);
-    event Participated(address user, uint256 nftId);
 
     constructor(
         address defaultAdmin,
         address _attestationRecord,
-        address _participation,
         address _reputation,
         address _stakeToken,
         uint256 _stake
     ) {
         attestationRecord = IMintableERC721(_attestationRecord);
-        participation = IMintableERC721(_participation);
         reputation = IReputation(_reputation);
         stakeToken = IWiraToken(_stakeToken);
         stake = _stake;
@@ -121,23 +117,11 @@ contract AttestationOracle is AccessControl {
     }
 
     /**
-     * Mint a participation NFT if user doesn't have one yet
-     * @param uri a string of IPFS json containing participation image and data
-     */
-    function _mintParticipationNft(string calldata uri) private {
-        if(participation.balanceOf(msg.sender) == 0) {
-            uint256 nftId = participation.safeMint(msg.sender, uri);
-            emit Participated(msg.sender, nftId);
-        }
-    }
-
-    /**
-     * execute a sequence of transactions
+     * Create a new attestation
      * @param id attestation identifier
      * @param uri a string of IPFS json containing record image and data
-     * @param participationUri a string of IPFS json containing participation image and data if needed
      */
-    function createAttestation(string calldata id, string calldata uri, string calldata participationUri)
+    function createAttestation(string calldata id, string calldata uri)
         external
         onlyVerified
         onlyActive
@@ -162,7 +146,6 @@ contract AttestationOracle is AccessControl {
         totalAttestations++;
         //deposit first stake
         _depositStake(id);
-        _mintParticipationNft(participationUri);
         emit AttestationCreated(id, recordId);
     }
 
@@ -172,9 +155,8 @@ contract AttestationOracle is AccessControl {
      * @param record record chosen
      * @param choice attest selected record as real or fake
      * @param uri IPFS json of new record to attest as real, if uploaded, record and choice are ignored
-     * @param participationUri a string of IPFS json containing participation image and data if needed
      */
-    function attest(string calldata id, uint256 record, bool choice, string calldata uri, string calldata participationUri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
+    function attest(string calldata id, uint256 record, bool choice, string calldata uri) external onlyVerified onlyActive onlyInState(id, AttestationState.OPEN) returns(uint256) {
         Attestation storage q = attestations[id];
         require(q.attested[msg.sender].record == 0, "already attested");
 
@@ -193,7 +175,6 @@ contract AttestationOracle is AccessControl {
                 q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
             }
             _depositStake(id);
-            _mintParticipationNft(participationUri);
             emit Attested(recordId);
             return recordId;
         //check that record exists and register user choice
@@ -219,7 +200,6 @@ contract AttestationOracle is AccessControl {
             }
             q.attested[msg.sender] = AttestationChoice(record, choice);
             _depositStake(id);
-            _mintParticipationNft(participationUri);
             emit Attested(record);
             return record;
         }
