@@ -52,9 +52,9 @@ contract AttestationOracle is AccessControl {
         AttestationState resolved;                                      //state of attestation
     }
 
-    IMintableERC721 public immutable attestationRecord;
-    IReputation public immutable reputation;
-    IWiraToken public immutable stakeToken;
+    IMintableERC721 public immutable ATTESTATION_RECORD;
+    IReputation public immutable REPUTATION;
+    IWiraToken public immutable STAKE_TOKEN;
     uint256 public stake;
     uint256 public totalAttestations;
     mapping(string => Attestation) private attestations;
@@ -73,9 +73,9 @@ contract AttestationOracle is AccessControl {
         address _stakeToken,
         uint256 _stake
     ) {
-        attestationRecord = IMintableERC721(_attestationRecord);
-        reputation = IReputation(_reputation);
-        stakeToken = IWiraToken(_stakeToken);
+        ATTESTATION_RECORD = IMintableERC721(_attestationRecord);
+        REPUTATION = IReputation(_reputation);
+        STAKE_TOKEN = IWiraToken(_stakeToken);
         stake = _stake;
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
@@ -105,14 +105,14 @@ contract AttestationOracle is AccessControl {
     //Private call to finish user registering and init reputation
     function register(address user, bool jury) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(jury ? JURY_ROLE:USER_ROLE, user);
-        reputation.initReputationOf(user);
+        REPUTATION.initReputationOf(user);
     }
 
     /**
      * make a stake deposit of an attestation to redistribute on resolve
      */
     function _depositStake(string calldata id) private {
-        stakeToken.mint(address(this), stake);
+        STAKE_TOKEN.mint(address(this), stake);
         attestations[id].cumulatedStake += stake;
     }
 
@@ -131,17 +131,17 @@ contract AttestationOracle is AccessControl {
         require(q.records.length == 0, "Already created");
 
         //mint new NFT for record
-        recordId = attestationRecord.safeMint(msg.sender, uri);
+        recordId = ATTESTATION_RECORD.safeMint(msg.sender, uri);
         q.records.push(recordId);
         q.attested[msg.sender] = AttestationChoice(recordId, true);
 
         //add record with user vote
         if(hasRole(USER_ROLE, msg.sender)) {
             q.usersAttested.push(msg.sender);
-            q.userAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
+            q.userAttestations[recordId] = RecordAttestation(1, 0, int256(REPUTATION.getReputationOf(msg.sender)));
         }else{
             q.juriesAttested.push(msg.sender);
-            q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
+            q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(REPUTATION.getReputationOf(msg.sender)));
         }
         totalAttestations++;
         //deposit first stake
@@ -164,15 +164,15 @@ contract AttestationOracle is AccessControl {
 
         //add new record if uri is uploaded
         if(bytes(uri).length > 0) {
-            uint256 recordId = attestationRecord.safeMint(msg.sender, uri);
+            uint256 recordId = ATTESTATION_RECORD.safeMint(msg.sender, uri);
             q.records.push(recordId);
             q.attested[msg.sender] = AttestationChoice(recordId, true);
             if(!isJury) {
                 q.usersAttested.push(msg.sender);
-                q.userAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
+                q.userAttestations[recordId] = RecordAttestation(1, 0, int256(REPUTATION.getReputationOf(msg.sender)));
             }else{
                 q.juriesAttested.push(msg.sender);
-                q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
+                q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(REPUTATION.getReputationOf(msg.sender)));
             }
             _depositStake(id);
             emit Attested(recordId);
@@ -183,19 +183,19 @@ contract AttestationOracle is AccessControl {
                 q.usersAttested.push(msg.sender);
                 if(choice) {
                     q.userAttestations[record].yesCount ++;
-                    q.userAttestations[record].weighedAttestation += int256(reputation.getReputationOf(msg.sender));
+                    q.userAttestations[record].weighedAttestation += int256(REPUTATION.getReputationOf(msg.sender));
                 }else {
                     q.userAttestations[record].noesCount ++;
-                    q.userAttestations[record].weighedAttestation -= int256(reputation.getReputationOf(msg.sender));
+                    q.userAttestations[record].weighedAttestation -= int256(REPUTATION.getReputationOf(msg.sender));
                 }
             }else{
                 q.juriesAttested.push(msg.sender);
                 if(choice) {
                     q.juryAttestations[record].yesCount ++;
-                    q.juryAttestations[record].weighedAttestation += int256(reputation.getReputationOf(msg.sender));
+                    q.juryAttestations[record].weighedAttestation += int256(REPUTATION.getReputationOf(msg.sender));
                 }else {
                     q.juryAttestations[record].noesCount ++;
-                    q.juryAttestations[record].weighedAttestation -= int256(reputation.getReputationOf(msg.sender));
+                    q.juryAttestations[record].weighedAttestation -= int256(REPUTATION.getReputationOf(msg.sender));
                 }
             }
             q.attested[msg.sender] = AttestationChoice(record, choice);
@@ -352,20 +352,20 @@ contract AttestationOracle is AccessControl {
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
             bool up = q.attested[user].choice;
-            reputation.updateReputation(user, up);
+            REPUTATION.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
-                stakeToken.safeTransfer(user, distributionAmount);
+                STAKE_TOKEN.safeTransfer(user, distributionAmount);
             }
         }
 
         for(uint256 i = 0; i < q.juriesAttested.length; i++) {
             address jury = q.juriesAttested[i];
             bool up = q.attested[jury].choice;
-            reputation.updateReputation(jury, up);
+            REPUTATION.updateReputation(jury, up);
             emit ReputationUpdated(id, jury, up);
             if(up) {
-                stakeToken.safeTransfer(jury, distributionAmount);
+                STAKE_TOKEN.safeTransfer(jury, distributionAmount);
             }
         }
 
@@ -395,20 +395,20 @@ contract AttestationOracle is AccessControl {
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
             bool up = q.attested[user].record == finalResult && q.attested[user].choice;
-            reputation.updateReputation(user, up);
+            REPUTATION.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
-                stakeToken.safeTransfer(user, distributionAmount);
+                STAKE_TOKEN.safeTransfer(user, distributionAmount);
             }
         }
 
         for(uint256 i = 0; i < q.juriesAttested.length; i++) {
             address user = q.juriesAttested[i];
             bool up = q.attested[user].record == finalResult && q.attested[user].choice;
-            reputation.updateReputation(user, up);
+            REPUTATION.updateReputation(user, up);
             emit ReputationUpdated(id, user, up);
             if(up) {
-                stakeToken.safeTransfer(user, distributionAmount);
+                STAKE_TOKEN.safeTransfer(user, distributionAmount);
             }
         }
     }
