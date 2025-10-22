@@ -6,6 +6,7 @@ import {AttestationOracle} from "../src/AttestationOracle.sol";
 import {Reputation} from "../src/Reputation.sol";
 import {AttestationRecord} from "../src/AttestationRecord.sol";
 import {WiraToken} from "../src/WiraToken.sol";
+import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 contract OracleScript is Script {
   function run() external {
@@ -15,7 +16,11 @@ contract OracleScript is Script {
 
     vm.startBroadcast();
     //init reputation contract
-    Reputation reputation = new Reputation(msg.sender);
+    address proxy = Upgrades.deployUUPSProxy(
+      "Reputation.sol",
+      abi.encodeCall(Reputation.initialize, (msg.sender))
+    );
+    Reputation reputation = Reputation(proxy);
 
     //init nft contract for records
     AttestationRecord recordNft = new AttestationRecord(msg.sender);

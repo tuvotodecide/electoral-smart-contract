@@ -6,6 +6,7 @@ import {AttestationOracle} from "../../src/AttestationOracle.sol";
 import {Reputation} from "../../src/Reputation.sol";
 import {AttestationRecord} from "../../src/AttestationRecord.sol";
 import {WiraToken} from "../../src/WiraToken.sol";
+import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 contract AttestationFlowTest is Test {
     Reputation reputation;
@@ -21,7 +22,12 @@ contract AttestationFlowTest is Test {
         resolver = makeAddr("resolver");
 
         //init reputation contract
-        reputation = new Reputation(owner);
+        address implementation = address(new Reputation());
+        address proxy = UnsafeUpgrades.deployUUPSProxy(
+            implementation,
+            abi.encodeCall(Reputation.initialize, (owner))
+        );
+        reputation = Reputation(proxy);
 
         //init nft contract for records and participation
         recordNft = new AttestationRecord(owner);
