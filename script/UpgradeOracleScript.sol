@@ -4,14 +4,14 @@ pragma solidity ^0.8.24;
 import {Script} from "forge-std/Script.sol";
 import {Upgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
-contract UpgradeReputationScript is Script {
+contract UpgradeOracleScript is Script {
   function run() external {
-    address proxyAddress = vm.envAddress("REPUTATION_PROXY_ADDRESS");
+    address proxyAddress = vm.envAddress("ORACLE_PROXY_ADDRESS");
 
     vm.startBroadcast();
     Upgrades.upgradeProxy(
       proxyAddress,
-      "out/ReputationV2.sol/ReputationV2.json",
+      "out/AttestationOracleV2.sol/AttestationOracleV2.json",
       ""
     );
 

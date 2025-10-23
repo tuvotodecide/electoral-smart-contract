@@ -7,8 +7,13 @@ import {Reputation} from "../../src/Reputation.sol";
 import {AttestationRecord} from "../../src/AttestationRecord.sol";
 import {WiraToken} from "../../src/WiraToken.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
+import {AttestationOracleV2} from "../mocks/AttestationOracleV2.sol";
 
-contract AttestationFlowTest is Test {
+/**
+ * This tests are similar to AttestationFlowTest, but includes upgrade process on random points of the flow
+ * to ensure the upgradeability of the contract and data consistency after upgrade. 
+ */
+contract AttestationFlowUpgradeTest is Test {
     Reputation reputation;
     AttestationRecord recordNft;
     AttestationOracle oracle;
@@ -62,6 +67,23 @@ contract AttestationFlowTest is Test {
         vm.stopPrank();
     }
 
+    function upgradeOracle() internal {
+        vm.startPrank(owner);
+        address newImplementation = address(new AttestationOracleV2());
+        UnsafeUpgrades.upgradeProxy(address(oracle), newImplementation, "");
+
+        //set oracle active period after upgrade, warp stills on 100
+        oracle.setActiveTime(0, 200);
+        vm.stopPrank();
+    }
+
+    function checkNewAttestationTime(string memory id, uint256 start, uint256 end) internal view {
+        AttestationOracleV2 oracleV2 = AttestationOracleV2(address(oracle));
+        (, , uint256 startTime, uint256 endTime) = oracleV2.getAttestationInfo(id);
+        assertEq(startTime, start);
+        assertEq(endTime, end);
+    }
+
     function test_unanimous_1record_1user() public {
         address user1 = makeAddr("user1");
 
@@ -74,6 +96,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user1);
         (uint256 recordId) = oracle.createAttestation(attestationId, "record 1");
 
+        upgradeOracle();
+
         //wrap time and resolve
         vm.warp(201);
         oracle.resolve(attestationId);
@@ -84,6 +108,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 4);
         //check attestation final result set
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 201);
 
         //check user reputation
         vm.prank(user1);
@@ -115,12 +141,16 @@ contract AttestationFlowTest is Test {
         vm.warp(201);
         oracle.resolve(attestationId);
 
+        upgradeOracle();
+
         //check attestation info
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         //check attestation status 4: PENDING
         assertEq(uint256(resolved), 4);
         //check attestation final result
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users reputation
         vm.prank(user1);
@@ -145,6 +175,8 @@ contract AttestationFlowTest is Test {
         oracle.register(user3, false);
         vm.stopPrank();
 
+        upgradeOracle();
+
         //user 1 uploads record
         string memory attestationId = "1";
         vm.prank(user1);
@@ -168,6 +200,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 3);
         //check attestation final result set
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 100, 201);
 
         //check users reputation up
         vm.prank(user1);
@@ -199,12 +233,16 @@ contract AttestationFlowTest is Test {
         vm.warp(201);
         oracle.resolve(attestationId);
 
+        upgradeOracle();
+
         //check attestation info
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         //check attestation status 3: CLOSED
         assertEq(uint256(resolved), 3);
         //check attestation final result set
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check jury reputation up
         vm.prank(jury1);
@@ -218,6 +256,8 @@ contract AttestationFlowTest is Test {
         address jury1 = makeAddr("jury1");
         address jury2 = makeAddr("jury2");
         address jury3 = makeAddr("jury3");
+
+        upgradeOracle();
 
         //register juries
         vm.startPrank(owner);
@@ -249,6 +289,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 3);
         //check attestation final result set
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 100, 201);
 
         //check juries reputation up
         vm.prank(jury1);
@@ -279,6 +321,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user1);
         uint256 recordId = oracle.createAttestation(attestationId, "record 1");
 
+        upgradeOracle();
+
         //jury 1 attest record 1
         vm.prank(jury1);
         oracle.attest(attestationId, recordId, true, "");
@@ -293,6 +337,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 3);
         //check attestation final result set
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 201);
 
         //check users reputation up
         vm.prank(user1);
@@ -318,6 +364,11 @@ contract AttestationFlowTest is Test {
         vm.startPrank(owner);
         oracle.register(user1, false);
         oracle.register(user2, false);
+        vm.stopPrank();
+
+        upgradeOracle();
+
+        vm.startPrank(owner);
         oracle.register(user3, false);
         oracle.register(jury1, true);
         oracle.register(jury2, true);
@@ -353,6 +404,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 3);
         //check attestation final result set
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 100, 201);
 
         //check users reputation up
         vm.prank(user1);
@@ -397,6 +450,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user1);
         oracle.createAttestation(attestationId, "record 1");
 
+        upgradeOracle();
+
         //user 2 uploads record 2 on same attestation
         vm.prank(user2);
         oracle.attest(attestationId, 0, false, "record 2");
@@ -415,6 +470,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 2);
         //check attestation final result not set
         assertEq(finalResult, 0);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users reputation without changes
         vm.prank(user1);
@@ -461,6 +518,8 @@ contract AttestationFlowTest is Test {
         vm.prank(jury1);
         oracle.attest(attestationId, record2, true, "");
 
+        upgradeOracle();
+
         //wrap time and resolve
         vm.warp(201);
         oracle.resolve(attestationId);
@@ -471,6 +530,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 1);
         //check attestation final result
         assertEq(finalResult, record2);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 201);
 
         //check users reputation
         vm.prank(user1);
@@ -512,6 +573,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user2);
         oracle.attest(attestationId, 0, false, "record 2");
 
+        upgradeOracle();
+
         //user 3 uploads record 3 on same attestation
         vm.prank(user3);
         oracle.attest(attestationId, 0, false, "record 3");
@@ -530,6 +593,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 2);
         //check attestation final result
         assertEq(finalResult, 0);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users reputation
         vm.prank(user1);
@@ -581,6 +646,8 @@ contract AttestationFlowTest is Test {
         vm.prank(jury1);
         oracle.attest(attestationId, 0, false, "record 4");
 
+        upgradeOracle();
+
         //jury 2 uploads record 5 on same attestation
         vm.prank(jury2);
         oracle.attest(attestationId, 0, false, "record 5");
@@ -595,6 +662,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 2);
         //check attestation final result
         assertEq(finalResult, 0);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users reputation
         vm.prank(user1);
@@ -637,6 +706,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user1);
         uint256 record1 = oracle.createAttestation(attestationId, "record 1");
 
+        upgradeOracle();
+
         //user 2 attest record 1
         vm.prank(user2);
         oracle.attest(attestationId, record1, true, "");
@@ -663,6 +734,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 2);
         //check attestation final result
         assertEq(finalResult, 0);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users reputation
         vm.prank(user1);
@@ -716,6 +789,7 @@ contract AttestationFlowTest is Test {
         //users 4,5 attest record 2
         vm.prank(user4);
         oracle.attest(attestationId, record2, true, "");
+        upgradeOracle();
         vm.prank(user5);
         oracle.attest(attestationId, record2, true, "");
 
@@ -729,6 +803,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 1);
         //check attestation final result set
         assertEq(finalResult, record2);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 201);
 
         //check users 2,4,5 reputation up
         vm.prank(user2);
@@ -774,6 +850,8 @@ contract AttestationFlowTest is Test {
         oracle.register(jury5, false);
         vm.stopPrank();
 
+        upgradeOracle();
+
         //jury 1 uploads record 1
         string memory attestationId = "1";
         vm.prank(jury1);
@@ -803,6 +881,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 1);
         //check attestation final result set
         assertEq(finalResult, record2);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 100, 201);
 
         //check juries 2,4,5 reputation up
         vm.prank(jury2);
@@ -869,7 +949,9 @@ contract AttestationFlowTest is Test {
         vm.prank(jury2);
         oracle.attest(attestationId, record1, true, "");
 
-        //juriy 3 attest record 2
+        upgradeOracle();
+
+        //jury 3 attest record 2
         vm.prank(jury3);
         oracle.attest(attestationId, record2, true, "");
 
@@ -883,6 +965,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 1);
         //check attestation final result set
         assertEq(finalResult, record1);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 201);
 
         //check users 1,3 reputation up
         vm.prank(user1);
@@ -958,6 +1042,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user3);
         oracle.attest(attestationId, record1, true, "");
 
+        upgradeOracle();
+
         //juries 2,3 attest record 1
         vm.prank(jury2);
         oracle.attest(attestationId, record1, true, "");
@@ -980,6 +1066,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 2);
         //check attestation final result not set
         assertEq(finalResult, 0);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users and juries reputation not change
         vm.prank(user1);
@@ -1050,12 +1138,16 @@ contract AttestationFlowTest is Test {
         vm.warp(201);
         oracle.resolve(attestationId);
 
+        upgradeOracle();
+
         //check attestation info
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         //check attestation status 4: PENDING
         assertEq(uint256(resolved), 4);
         //check attestation final result set
         assertEq(finalResult, record2);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users reputation
         vm.prank(user1);
@@ -1088,10 +1180,13 @@ contract AttestationFlowTest is Test {
         vm.stopPrank();
 
         //up user 5 reputation to 3
-        vm.startPrank(address(oracle));
+        vm.prank(address(oracle));
         reputation.updateReputation(user5, true);
+
+        upgradeOracle();
+
+        vm.prank(address(oracle));
         reputation.updateReputation(user5, true);
-        vm.stopPrank();
 
         //user 1 uploads record 1
         string memory attestationId = "1";
@@ -1122,6 +1217,8 @@ contract AttestationFlowTest is Test {
         assertEq(uint256(resolved), 1);
         //check attestation final result set
         assertEq(finalResult, record2);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 100, 201);
 
         //check users 3,4,5 reputation up
         vm.prank(user3);
@@ -1205,12 +1302,16 @@ contract AttestationFlowTest is Test {
         vm.warp(201);
         oracle.resolve(attestationId);
 
+        upgradeOracle();
+
         //check attestation info
         (AttestationOracle.AttestationState resolved, uint256 finalResult) = oracle.getAttestationInfo(attestationId);
         //check attestation status 1: CONSENSUAL
         assertEq(uint256(resolved), 1);
         //check attestation final result set
         assertEq(finalResult, record2);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 0);
 
         //check users 3 and jury 3 reputation up
         vm.prank(user3);
@@ -1278,6 +1379,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user3);
         oracle.attest(attestationId, recordId, true, "");
 
+        upgradeOracle();
+
         //check attest added +1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 3);
 
@@ -1289,6 +1392,8 @@ contract AttestationFlowTest is Test {
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 3);
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 3 hours);
 
         //three users voted, 15e18 total staking, all voted yes, 5e18 for every user
         //check users reputation and stake
@@ -1334,6 +1439,8 @@ contract AttestationFlowTest is Test {
         vm.prank(user2);
         oracle.attest(attestationId, recordId, true, "");
 
+        upgradeOracle();
+
         //check attest added +1
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 2);
 
@@ -1359,6 +1466,8 @@ contract AttestationFlowTest is Test {
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 1);
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 3 hours);
 
         //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
         uint256 userReward = uint(20e18) / uint(3);
@@ -1421,6 +1530,7 @@ contract AttestationFlowTest is Test {
 
         //check attestations
         assertEq(oracle.getWeighedAttestations(attestationId, recordId), 2);
+        upgradeOracle();
         assertEq(oracle.getWeighedAttestations(attestationId, record2Id), 1);
 
         //jury attest yes to first record
@@ -1438,6 +1548,8 @@ contract AttestationFlowTest is Test {
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 1);
         assertEq(finalResult, recordId);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 3 hours);
 
         //four users voted, 20e18 total staking, three was right, 6.666...e18 for every user
         uint256 userReward = uint(20e18) / uint(3);
@@ -1534,6 +1646,8 @@ contract AttestationFlowTest is Test {
         assertEq(reputation.getReputation(), 1);
         assertEq(token.balanceOf(jury1), 0);
 
+        upgradeOracle();
+
         //authority address makes final decision, selection second record
         vm.prank(authority);
         oracle.verifyAttestation(attestationId, record2Id);
@@ -1542,6 +1656,8 @@ contract AttestationFlowTest is Test {
         (resolved, finalResult) = oracle.getAttestationInfo(attestationId);
         assertEq(uint256(resolved), 3);
         assertEq(finalResult, record2Id);
+        //check attestation new start and end time after upgrade
+        checkNewAttestationTime(attestationId, 0, 3 hours);
 
         //four users voted, 20e18 total staking, two was right, 10e18 for every user
         //check reputation changes

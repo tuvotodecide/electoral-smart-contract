@@ -9,11 +9,12 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
-import {IMintableERC721} from "./interfaces/IMintableERC721.sol";
-import {IReputation} from "./interfaces/IReputation.sol";
-import {IWiraToken} from "./interfaces/IWiraToken.sol";
+import {IMintableERC721} from "../../src/interfaces/IMintableERC721.sol";
+import {IReputation} from "../../src/interfaces/IReputation.sol";
+import {IWiraToken} from "../../src/interfaces/IWiraToken.sol";
 
-contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
+/// @custom:oz-upgrades-from src/AttestationOracle.sol:AttestationOracle
+contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20 for IWiraToken;
 
     bytes32 public constant USER_ROLE = keccak256("USER");
@@ -62,6 +63,14 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
     uint256 public stake;
     uint256 public totalAttestations;
     mapping(string => Attestation) private attestations;
+    uint256 public attestationWindow; //time for attestations
+
+    struct AttestationTime {
+        uint256 start;
+        uint256 end;
+    }
+    mapping(string => AttestationTime) private attestationsTimes;
+
 
     event RegisterRequested(address user, string uri);
     event AttestationCreated(string id, uint256 recordId);
@@ -89,7 +98,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
     }
 
     modifier onlyActive() {
-        require(block.timestamp > attestStart && block.timestamp < attestEnd, "Oracle inactive");
+        require(block.timestamp > attestStart && block.timestamp < attestStart + attestationWindow, "Oracle inactive");
         _;
     }
 
@@ -137,7 +146,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         returns (uint256 recordId)
     {
         Attestation storage q = attestations[id];
-        require(q.records.length == 0, "Already created");
+        require(q.records.length == 0, "Record already created");
 
         //mint new NFT for record
         recordId = attestationRecord.safeMint(msg.sender, uri);
@@ -152,6 +161,8 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
             q.juriesAttested.push(msg.sender);
             q.juryAttestations[recordId] = RecordAttestation(1, 0, int256(reputation.getReputationOf(msg.sender)));
         }
+        attestationsTimes[id].start = block.timestamp;
+
         totalAttestations++;
         //deposit first stake
         _depositStake(id);
@@ -392,6 +403,8 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         } else {
             q.resolved = AttestationState.CLOSED;
         }
+
+        attestationsTimes[id].end = block.timestamp;
     }
 
     /**
@@ -402,7 +415,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         Attestation storage q = attestations[id];
         require(q.finalResult != 0, "Not final set");
         uint256 finalResult = q.finalResult;
-        
+
         uint256 distributionAmount = q.cumulatedStake / (
             q.userAttestations[finalResult].yesCount +
             q.juryAttestations[finalResult].yesCount
@@ -427,6 +440,8 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
                 stakeToken.safeTransfer(user, distributionAmount);
             }
         }
+
+        attestationsTimes[id].end = block.timestamp;
     }
 
     /**
@@ -445,10 +460,11 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
     }
 
     function getAttestationInfo(string calldata id) external view returns(
-        AttestationState resolved, uint256 finalResult
+        AttestationState resolved, uint256 finalResult, uint256 startTime, uint256 endTime
     ){
         Attestation storage q = attestations[id];
-        return (q.resolved, q.finalResult);
+        AttestationTime storage t = attestationsTimes[id];
+        return (q.resolved, q.finalResult, t.start, t.end);
     }
 
     function getWeighedAttestations(string calldata id, uint256 record) external view returns(int256) {
@@ -467,9 +483,9 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         return (attestations[id].mostAttested, attestations[id].mostJuryAttested);
     }
 
-    function setActiveTime(uint256 start, uint256 end) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setActiveTime(uint256 start, uint256 window) external onlyRole(DEFAULT_ADMIN_ROLE) {
         attestStart = start;
-        attestEnd = end;
+        attestationWindow = window;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}

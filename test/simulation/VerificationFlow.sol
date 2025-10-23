@@ -33,13 +33,18 @@ contract VerificationFlowTest is Test {
         WiraToken token = new WiraToken(owner, owner, owner);
 
         //init oracle
-        oracle = new AttestationOracle(
-            owner,
-            address(recordNft),
-            address(reputation),
-            address(token),
-            5e18
+        address oracleImpl = address(new AttestationOracle());
+        address oracleProxy = UnsafeUpgrades.deployUUPSProxy(
+            oracleImpl,
+            abi.encodeCall(AttestationOracle.initialize, (
+                owner,
+                address(recordNft),
+                address(reputation),
+                address(token),
+                5e18
+            ))
         );
+        oracle = AttestationOracle(oracleProxy);
 
         vm.startPrank(owner);
         //set default oracle active period

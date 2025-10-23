@@ -26,13 +26,17 @@ contract OracleScript is Script {
     AttestationRecord recordNft = new AttestationRecord(msg.sender);
 
     //init oracle with wira token as stake and 5 WIRA as stake amount
-    AttestationOracle oracle = new AttestationOracle(
+    address oracleProxy = Upgrades.deployUUPSProxy(
+      "AttestationOracle.sol",
+      abi.encodeCall(AttestationOracle.initialize, (
         msg.sender,
         address(recordNft),
         address(reputation),
         stakeToken,
         5e18
+      ))
     );
+    AttestationOracle oracle = AttestationOracle(oracleProxy);
 
     //Authorize oracle access to record, reputation and stake token contracts
     recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
