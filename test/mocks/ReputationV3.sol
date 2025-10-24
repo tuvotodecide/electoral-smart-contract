@@ -6,8 +6,8 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-/// @custom:oz-upgrades-from src/Reputation.sol:Reputation
-contract ReputationV2 is Initializable, UUPSUpgradeable, OwnableUpgradeable, AccessControlUpgradeable {
+/// @custom:oz-upgrades-from test/mocks/ReputationV2.sol:ReputationV2
+contract ReputationV3 is Initializable, UUPSUpgradeable, OwnableUpgradeable, AccessControlUpgradeable {
   bytes32 public constant AUTHORIZED_ROLE = keccak256("AUTHORIZED");
 
   mapping(address => uint256) private reputations;
@@ -49,7 +49,7 @@ contract ReputationV2 is Initializable, UUPSUpgradeable, OwnableUpgradeable, Acc
 
   function updateReputation(address user, bool up) external onlyRole(AUTHORIZED_ROLE) {
     if(up) {
-      reputations[user] += 1;
+      reputations[user] += 2;
     } else if(reputations[user] > 0) {
       reputations[user]--;
     }

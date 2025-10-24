@@ -10,7 +10,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 import {IMintableERC721} from "../../src/interfaces/IMintableERC721.sol";
-import {IReputation} from "../../src/interfaces/IReputation.sol";
+import {IReputation} from "./IReputationV2.sol";
 import {IWiraToken} from "../../src/interfaces/IWiraToken.sol";
 
 /// @custom:oz-upgrades-from src/AttestationOracle.sol:AttestationOracle
@@ -122,6 +122,7 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
     //Private call to finish user registering and init reputation
     function register(address user, bool jury) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _grantRole(jury ? JURY_ROLE:USER_ROLE, user);
+        reputation.removeReputationOf(user);
         reputation.initReputationOf(user);
     }
 

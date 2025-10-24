@@ -64,3 +64,23 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+## Technical Limits
+
+- Is not possible to have the same oracle with shared state across different networks.
+- You can obtain the total reputation as the sum of users’ reputations across different networks. However, to reduce a user’s total reputation, the contracts must handle negative reputation.
+- While it is possible to migrate an oracle with its data to a new network, there are no tools to do this easily; it would be a hard manual task.
+
+According to OpenZeppelin’s documentation, the following limits apply:
+- You cannot use selfdestruct or delegatecall in contracts.
+- You cannot change the order or type of variables or remove variables; you can add them, but only at the end of the variable list.
+- You can change a variable’s name while preserving its value.
+- You cannot change the order of inheritance.
+- You cannot add variables to parent contracts unless a gap has been reserved:
+```
+contract Base {
+    uint256 base1;
+    uint256 base2;
+    uint256[48] __gap;
+}
+```

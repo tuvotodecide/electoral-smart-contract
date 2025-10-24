@@ -8,6 +8,7 @@ import {AttestationRecord} from "../../src/AttestationRecord.sol";
 import {WiraToken} from "../../src/WiraToken.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {AttestationOracleV2} from "../mocks/AttestationOracleV2.sol";
+import {ReputationV2} from "../mocks/ReputationV2.sol";
 
 contract VerificationFlowUpgradeTest is Test {
     AttestationOracle oracle;
@@ -61,8 +62,10 @@ contract VerificationFlowUpgradeTest is Test {
 
     function upgradeOracle() internal {
         vm.startPrank(owner);
-        address newImplementation = address(new AttestationOracleV2());
-        UnsafeUpgrades.upgradeProxy(address(oracle), newImplementation, "");
+        address newOracle = address(new AttestationOracleV2());
+        UnsafeUpgrades.upgradeProxy(address(oracle), newOracle, "");
+        address newReputation = address(new ReputationV2());
+        UnsafeUpgrades.upgradeProxy(address(reputation), newReputation, "");
         vm.stopPrank();
     }
 

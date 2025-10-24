@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {Reputation} from "../../src/Reputation.sol";
 import { UnsafeUpgrades } from "openzeppelin-foundry-upgrades/Upgrades.sol";
 import {ReputationV2} from "../mocks/ReputationV2.sol";
+import {ReputationV3} from "../mocks/ReputationV3.sol";
 
 contract ReputationUpgradeTest is Test {
     Reputation reputation;
@@ -24,6 +25,13 @@ contract ReputationUpgradeTest is Test {
     function upgradeReputation() internal {
         vm.startPrank(initialOwner);
         address newImplementation = address(new ReputationV2());
+        UnsafeUpgrades.upgradeProxy(address(reputation), newImplementation, "");
+        vm.stopPrank();
+    }
+
+    function upgradeReputationToV3() internal {
+        vm.startPrank(initialOwner);
+        address newImplementation = address(new ReputationV3());
         UnsafeUpgrades.upgradeProxy(address(reputation), newImplementation, "");
         vm.stopPrank();
     }
@@ -411,10 +419,18 @@ contract ReputationUpgradeTest is Test {
         upgradeReputation();
 
         vm.startPrank(authorized);
-        reputation.updateReputation(user, true); // Increase reputation +2 in V2
+        reputation.updateReputation(user, true); // Increase reputation +1 in V2
         uint256 rep2 = reputation.getReputationOf(user);
         vm.stopPrank();
-        assertEq(rep2, 4);
+        assertEq(rep2, 3);
+
+        upgradeReputationToV3();
+
+        vm.startPrank(authorized);
+        reputation.updateReputation(user, true); // Increase reputation +2 in V3
+        uint256 rep3 = reputation.getReputationOf(user);
+        vm.stopPrank();
+        assertEq(rep3, 5);
     }
 
     function test_removeReputationOf() public {
