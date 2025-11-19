@@ -12,6 +12,7 @@ contract OracleScript is Script {
   function run() external {
     address stakeToken = vm.envAddress("STAKE_TOKEN");
     address resolver = vm.envAddress("RESOLVER");
+    address stakeTokenHolder = vm.envAddress("RECIPIENT_ADDRESS");
     WiraToken stakeContract = WiraToken(stakeToken);
 
     vm.startBroadcast();
@@ -33,6 +34,7 @@ contract OracleScript is Script {
         address(recordNft),
         address(reputation),
         stakeToken,
+        stakeTokenHolder,
         5e18
       ))
     );
@@ -41,10 +43,16 @@ contract OracleScript is Script {
     //Authorize oracle access to record, reputation and stake token contracts
     recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
     reputation.grantRole(reputation.AUTHORIZED_ROLE(), address(oracle));
-    stakeContract.grantRole(stakeContract.MINTER_ROLE(), address(oracle));
     oracle.grantRole(oracle.DEFAULT_ADMIN_ROLE(), resolver);
 
     vm.stopBroadcast();
+
+    //Approve oracle to transfer stake tokens on behalf of holder
+    uint256 holderPk = vm.envUint("RECIPIENT_PK");
+    vm.startBroadcast(holderPk);
+    stakeContract.approve(address(oracle), 1000000e18);
+    vm.stopBroadcast();
+
     console.log("Oracle deployed at:", address(oracle));
   }
 }

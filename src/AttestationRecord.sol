@@ -10,6 +10,11 @@ contract AttestationRecord is ERC721, ERC721Enumerable, ERC721URIStorage, Access
   bytes32 public constant AUTHORIZED_ROLE = keccak256("AUTHORIZED");
   uint256 private _nextTokenId;
 
+  modifier tokenIdNotOverflow() {
+    require(_nextTokenId < type(uint256).max, "Token ID overflow");
+    _;
+  }
+
   constructor(address initialOwner)
     ERC721("AttestationRecord", "ART")
   {
@@ -19,6 +24,7 @@ contract AttestationRecord is ERC721, ERC721Enumerable, ERC721URIStorage, Access
   function safeMint(address to, string memory uri)
     public
     onlyRole(AUTHORIZED_ROLE)
+    tokenIdNotOverflow
     returns (uint256)
   {
     uint256 tokenId = ++_nextTokenId;

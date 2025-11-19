@@ -60,6 +60,7 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
     IMintableERC721 public attestationRecord;
     IReputation public reputation;
     IWiraToken public stakeToken;
+    address private stakeTokenHolder;
     uint256 public stake;
     uint256 public totalAttestations;
     mapping(string => Attestation) private attestations;
@@ -84,6 +85,7 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
         address _attestationRecord,
         address _reputation,
         address _stakeToken,
+        address _stakeTokenHolder,
         uint256 _stake
     ) public initializer {
         __AccessControl_init();
@@ -93,6 +95,7 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
         attestationRecord = IMintableERC721(_attestationRecord);
         reputation = IReputation(_reputation);
         stakeToken = IWiraToken(_stakeToken);
+        stakeTokenHolder = _stakeTokenHolder;
         stake = _stake;
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
@@ -131,7 +134,7 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
      */
     function _depositStake(string calldata id) private {
         attestations[id].cumulatedStake += stake;
-        stakeToken.mint(address(this), stake);
+        stakeToken.safeTransferFrom(stakeTokenHolder, address(this), stake);
     }
 
     /**
@@ -372,10 +375,22 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
         }
 
         q.finalResult = q.records[0];
-        uint256 distributionAmount = q.cumulatedStake / (
-            q.userAttestations[q.finalResult].yesCount +
-            q.juryAttestations[q.finalResult].yesCount
-        );
+
+        if(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount <= 2) {
+            q.resolved = AttestationState.PENDING;
+        } else if(q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
+            q.resolved = AttestationState.CONSENSUAL;
+        } else {
+            q.resolved = AttestationState.CLOSED;
+        }
+
+        attestationsTimes[id].end = block.timestamp;
+
+        uint256 totalVotes = q.userAttestations[q.finalResult].yesCount +
+            q.juryAttestations[q.finalResult].yesCount;
+        require(totalVotes > 0, "Empty attestation votes");
+
+        uint256 distributionAmount = q.cumulatedStake / totalVotes;
         
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
@@ -396,16 +411,6 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
                 stakeToken.safeTransfer(jury, distributionAmount);
             }
         }
-
-        if(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount <= 2) {
-            q.resolved = AttestationState.PENDING;
-        } else if(q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
-            q.resolved = AttestationState.CONSENSUAL;
-        } else {
-            q.resolved = AttestationState.CLOSED;
-        }
-
-        attestationsTimes[id].end = block.timestamp;
     }
 
     /**
@@ -417,10 +422,11 @@ contract AttestationOracleV2 is Initializable, UUPSUpgradeable, OwnableUpgradeab
         require(q.finalResult != 0, "Not final set");
         uint256 finalResult = q.finalResult;
 
-        uint256 distributionAmount = q.cumulatedStake / (
-            q.userAttestations[finalResult].yesCount +
-            q.juryAttestations[finalResult].yesCount
-        );
+        uint256 totalVotes = q.userAttestations[q.finalResult].yesCount +
+            q.juryAttestations[q.finalResult].yesCount;
+        require(totalVotes > 0, "Empty attestation votes");
+
+        uint256 distributionAmount = q.cumulatedStake / totalVotes;
 
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];

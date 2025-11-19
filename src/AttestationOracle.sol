@@ -59,6 +59,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
     IMintableERC721 public attestationRecord;
     IReputation public reputation;
     IWiraToken public stakeToken;
+    address private stakeTokenHolder;
     uint256 public stake;
     uint256 public totalAttestations;
     mapping(string => Attestation) private attestations;
@@ -75,6 +76,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         address _attestationRecord,
         address _reputation,
         address _stakeToken,
+        address _stakeTokenHolder,
         uint256 _stake
     ) public initializer {
         __AccessControl_init();
@@ -84,6 +86,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         attestationRecord = IMintableERC721(_attestationRecord);
         reputation = IReputation(_reputation);
         stakeToken = IWiraToken(_stakeToken);
+        stakeTokenHolder = _stakeTokenHolder;
         stake = _stake;
         _grantRole(DEFAULT_ADMIN_ROLE, defaultAdmin);
     }
@@ -100,6 +103,11 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
 
     modifier onlyInState(string calldata id, AttestationState state) {
         require(attestations[id].resolved == state, "Bad attestation state");
+        _;
+    }
+
+    modifier existingId(string calldata id) {
+        require(attestations[id].records.length > 0, "Non existing attestation");
         _;
     }
 
@@ -121,7 +129,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
      */
     function _depositStake(string calldata id) private {
         attestations[id].cumulatedStake += stake;
-        stakeToken.mint(address(this), stake);
+        stakeToken.safeTransferFrom(stakeTokenHolder, address(this), stake);
     }
 
     /**
@@ -168,6 +176,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
     function attest(string calldata id, uint256 record, bool choice, string calldata uri)
         external
         nonReentrant
+        existingId(id)
         onlyVerified
         onlyActive
         onlyInState(id, AttestationState.OPEN)
@@ -226,7 +235,7 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
      * Resolve an attestation after time defined on attestationWindow
      * @param id attestation identifier
      */
-    function resolve(string calldata id) public nonReentrant onlyInState(id, AttestationState.OPEN) {
+    function resolve(string calldata id) public nonReentrant existingId(id) onlyInState(id, AttestationState.OPEN) {
         Attestation storage q = attestations[id];
         require(block.timestamp > attestEnd, "too soon");
 
@@ -360,10 +369,19 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         }
 
         q.finalResult = q.records[0];
-        uint256 distributionAmount = q.cumulatedStake / (
-            q.userAttestations[q.finalResult].yesCount +
-            q.juryAttestations[q.finalResult].yesCount
-        );
+        if(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount <= 2) {
+            q.resolved = AttestationState.PENDING;
+        } else if(q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
+            q.resolved = AttestationState.CONSENSUAL;
+        } else {
+            q.resolved = AttestationState.CLOSED;
+        }
+
+        uint256 totalVotes = q.userAttestations[q.finalResult].yesCount +
+            q.juryAttestations[q.finalResult].yesCount;
+        require(totalVotes > 0, "Empty attestation votes");
+
+        uint256 distributionAmount = q.cumulatedStake / totalVotes;
         
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
@@ -384,14 +402,6 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
                 stakeToken.safeTransfer(jury, distributionAmount);
             }
         }
-
-        if(q.juriesAttested.length == 0 && q.userAttestations[record].yesCount <= 2) {
-            q.resolved = AttestationState.PENDING;
-        } else if(q.userAttestations[record].noesCount > 0 || q.juryAttestations[record].noesCount > 0) {
-            q.resolved = AttestationState.CONSENSUAL;
-        } else {
-            q.resolved = AttestationState.CLOSED;
-        }
     }
 
     /**
@@ -403,10 +413,11 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
         require(q.finalResult != 0, "Not final set");
         uint256 finalResult = q.finalResult;
         
-        uint256 distributionAmount = q.cumulatedStake / (
-            q.userAttestations[finalResult].yesCount +
-            q.juryAttestations[finalResult].yesCount
-        );
+        uint256 totalVotes = q.userAttestations[q.finalResult].yesCount +
+            q.juryAttestations[q.finalResult].yesCount;
+        require(totalVotes > 0, "Empty attestation votes");
+
+        uint256 distributionAmount = q.cumulatedStake / totalVotes;
 
         for(uint256 i = 0; i < q.usersAttested.length; i++) {
             address user = q.usersAttested[i];
@@ -435,7 +446,12 @@ contract AttestationOracle is Initializable, UUPSUpgradeable, OwnableUpgradeable
     * @param id attestation identifier
     * @param choice record selected as real
     */
-    function verifyAttestation(string calldata id, uint256 choice) external nonReentrant onlyRole(AUTHORITY_ROLE) onlyInState(id, AttestationState.VERIFYING) {
+    function verifyAttestation(string calldata id, uint256 choice)
+        external
+        nonReentrant
+        onlyRole(AUTHORITY_ROLE)
+        onlyInState(id, AttestationState.VERIFYING)
+    {
         Attestation storage q = attestations[id];
         if(q.userAttestations[choice].yesCount > 0 || q.juryAttestations[choice].yesCount > 0) {
             q.finalResult = choice;

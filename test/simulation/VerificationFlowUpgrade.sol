@@ -32,7 +32,8 @@ contract VerificationFlowUpgradeTest is Test {
         reputation = Reputation(proxy);
 
         //init stake wira token
-        WiraToken token = new WiraToken(owner, owner, owner);
+        address tokenHolder = makeAddr("tokenHolder");
+        WiraToken token = new WiraToken(tokenHolder, owner, owner, owner);
 
         //init oracle
         address oracleImpl = address(new AttestationOracle());
@@ -43,6 +44,7 @@ contract VerificationFlowUpgradeTest is Test {
                 address(recordNft),
                 address(reputation),
                 address(token),
+                tokenHolder,
                 5e18
             ))
         );
@@ -56,8 +58,11 @@ contract VerificationFlowUpgradeTest is Test {
         //Authorize oracle access to record contract
         recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
         reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
-        token.grantRole(token.MINTER_ROLE(), address(oracle));
         vm.stopPrank();
+
+        //Approve oracle to transfer stake tokens on behalf of holder
+        vm.prank(tokenHolder);
+        token.approve(address(oracle), 1000000e18);
     }
 
     function upgradeOracle() internal {

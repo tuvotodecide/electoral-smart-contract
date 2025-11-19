@@ -33,7 +33,8 @@ contract AttestationFlowTest is Test {
         recordNft = new AttestationRecord(owner);
 
         //init stake wira token
-        token = new WiraToken(owner, owner, owner);
+        address tokenHolder = makeAddr("tokenHolder");
+        token = new WiraToken(tokenHolder, owner, owner, owner);
 
         //init oracle
         address oracleImpl = address(new AttestationOracle());
@@ -44,6 +45,7 @@ contract AttestationFlowTest is Test {
                 address(recordNft),
                 address(reputation),
                 address(token),
+                tokenHolder,
                 5e18
             ))
         );
@@ -53,13 +55,16 @@ contract AttestationFlowTest is Test {
         //Authorize oracle access to record and reputation contracts
         recordNft.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
         reputation.grantRole(recordNft.AUTHORIZED_ROLE(), address(oracle));
-        token.grantRole(token.MINTER_ROLE(), address(oracle));
         oracle.grantRole(oracle.DEFAULT_ADMIN_ROLE(), resolver);
 
         //set oracle active period
         oracle.setActiveTime(0, 200);
         vm.warp(100);
         vm.stopPrank();
+
+        //Approve oracle to transfer stake tokens on behalf of holder
+        vm.prank(tokenHolder);
+        token.approve(address(oracle), 1000000e18);
     }
 
     function test_unanimous_1record_1user() public {
